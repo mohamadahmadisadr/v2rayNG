@@ -42,7 +42,7 @@ class GroupServerFragment : Fragment() {
         ownerActivity.resources.getStringArray(R.array.share_method_more)
     }
     private val launcher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (SettingsChangeManager.consumeRestartService() && mainViewModel.isRunning.value == true) {
+        if (SettingsChangeManager.consumeRestartService() && mainViewModel.isRunningFlow.value) {
             ownerActivity.restartV2Ray()
         }
     }
@@ -167,7 +167,7 @@ class GroupServerFragment : Fragment() {
 
         val intent = Intent(ownerActivity, activityClass)
             .putExtra("guid", guid)
-            .putExtra("isRunning", mainViewModel.isRunning.value)
+            .putExtra("isRunning", mainViewModel.isRunningFlow.value)
             .putExtra("createConfigType", profile.configType.value)
             .putExtra("subscriptionId", subId)
 
@@ -219,7 +219,7 @@ class GroupServerFragment : Fragment() {
             MmkvManager.setSelectServer(guid)
             mainViewModel.updateSelectedGuid()
 
-            if (mainViewModel.isRunning.value == true) {
+            if (mainViewModel.isRunningFlow.value) {
                 ownerActivity.restartV2Ray()
             }
         }

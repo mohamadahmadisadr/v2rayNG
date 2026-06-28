@@ -8,7 +8,6 @@ import android.content.IntentFilter
 import android.content.res.AssetManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.v2ray.ang.AngApplication
 import com.v2ray.ang.AppConfig
@@ -29,8 +28,11 @@ import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.MessageUtil
 import com.v2ray.ang.util.Utils
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.Collections
 import java.util.regex.PatternSyntaxException
@@ -53,12 +55,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isRunningFlow = MutableStateFlow(false)
     val isRunningFlow = _isRunningFlow.asStateFlow()
 
-    @Deprecated("Use isRunningFlow in Compose")
-    val isRunning by lazy { MutableLiveData<Boolean>() }
-    val updateListAction by lazy { MutableLiveData<Int>() }
-    val updateTestResultAction by lazy { MutableLiveData<String>() }
-    val updateGroupsAction by lazy { MutableLiveData<Unit>() }
-    val startServiceAction by lazy { MutableLiveData<Unit>() }
+    private val _updateTestResultAction = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val updateTestResultAction: SharedFlow<String> = _updateTestResultAction.asSharedFlow()
+
+    private val _updateGroupsAction = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val updateGroupsAction: SharedFlow<Unit> = _updateGroupsAction.asSharedFlow()
+
+    private val _startServiceAction = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val startServiceAction: SharedFlow<Unit> = _startServiceAction.asSharedFlow()
 
     private val _isLoadingFlow = MutableStateFlow(false)
     val isLoadingFlow = _isLoadingFlow.asStateFlow()
@@ -76,7 +80,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         subscriptionId = AppConfig.AUTO_BEST_SUBSCRIPTION_ID
         keywordFilter = ""
         reloadServerList()
-        updateGroupsAction.postValue(Unit)
+        _updateGroupsAction.tryEmit(Unit)
 
         AutoBestConfigManager.start(
             getApplication<Application>(),
@@ -98,9 +102,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 
                 // 2. Reload list and cache, then trigger actions
                 reloadServerList {
-                    updateGroupsAction.postValue(Unit)
+                    _updateGroupsAction.tryEmit(Unit)
                     updateSelectedGuid()
-                    startServiceAction.postValue(Unit)
+                    _startServiceAction.tryEmit(Unit)
                 }
             }
         )
@@ -141,7 +145,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * `registerReceiver(Context, BroadcastReceiver, IntentFilter, int)`.
      */
     fun startListenBroadcast() {
-        isRunning.postValue(false)
         val mFilter = IntentFilter(AppConfig.BROADCAST_ACTION_ACTIVITY)
         ContextCompat.registerReceiver(getApplication(), mMsgReceiver, mFilter, Utils.receiverFlags())
         MessageUtil.sendMsg2Service(getApplication(), AppConfig.MSG_REGISTER_CLIENT, "")
@@ -176,7 +179,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             withContext(Dispatchers.Main) {
-                updateListAction.value = -1
                 onComplete?.invoke()
             }
         }
@@ -292,7 +294,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         val guids = synchronized(this) { serversCache.map { it.guid }.toList() }
         MmkvManager.clearAllTestDelayResults(guids)
-        updateListAction.value = -1
         updateTestResults()
 
         viewModelScope.launch(Dispatchers.Default) {
@@ -440,6 +441,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 serversCopy.count()
             }
+        _updateGroupsAction.tryEmit(Unit)
         return count
     }
 
@@ -552,19 +554,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch(Dispatchers.Main) {
                 when (key) {
                     AppConfig.MSG_STATE_RUNNING -> {
-                        isRunning.value = true
                         _isRunningFlow.value = true
                         _isLoadingFlow.value = false
                     }
 
                     AppConfig.MSG_STATE_NOT_RUNNING -> {
-                        isRunning.value = false
                         _isRunningFlow.value = false
                         _isLoadingFlow.value = false
                     }
 
                     AppConfig.MSG_STATE_START_SUCCESS -> {
-                        isRunning.value = true
                         _isRunningFlow.value = true
                         _isLoadingFlow.value = false
                     }
@@ -575,32 +574,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         } else {
                             getApplication<Application>().toastError(R.string.toast_services_failure)
                         }
-                        isRunning.value = false
                         _isRunningFlow.value = false
                         _isLoadingFlow.value = false
                     }
 
                     AppConfig.MSG_STATE_STOP_SUCCESS -> {
-                        isRunning.value = false
                         _isRunningFlow.value = false
                         _isLoadingFlow.value = false
                     }
 
                     AppConfig.MSG_MEASURE_DELAY_SUCCESS -> {
-                        updateTestResultAction.value = content
+                        _updateTestResultAction.tryEmit(content ?: "")
                         // For current server real ping, we might need to update the specific item if it's in the list
                         MmkvManager.getSelectServer()?.let { updateTestResult(it) }
                     }
 
                     AppConfig.MSG_MEASURE_CONFIG_SUCCESS -> {
                         LogUtil.d(AppConfig.TAG, "Ping success: $content")
-                        updateListAction.value = getPosition(content ?: "")
                         updateTestResult(content ?: "")
                     }
 
                     AppConfig.MSG_MEASURE_CONFIG_NOTIFY -> {
-                        updateTestResultAction.value =
+                        _updateTestResultAction.tryEmit(
                             getApplication<Application>().getString(R.string.connection_runing_task_left, content)
+                        )
                     }
 
                     AppConfig.MSG_MEASURE_CONFIG_FINISH -> {

@@ -19,14 +19,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.view.GravityCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreServiceManager
@@ -76,7 +77,7 @@ class MainActivity : HelperBaseActivity() {
     private val requestActivityLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (SettingsChangeManager.consumeRestartService()) {
             mainViewModel.reloadServerList()
-            if (mainViewModel.isRunning.value == true) {
+            if (mainViewModel.isRunningFlow.value) {
                 restartV2Ray()
             }
         }
@@ -160,7 +161,7 @@ class MainActivity : HelperBaseActivity() {
     override fun onResume() {
         super.onResume()
         // Passive revalidation: Only check if connection is alive when user returns to app
-        if (mainViewModel.isRunning.value == true) {
+        if (mainViewModel.isRunningFlow.value) {
             lifecycleScope.launch(Dispatchers.IO) {
                 val currentGuid = MmkvManager.getSelectServer()
                 val config = currentGuid?.let { MmkvManager.decodeServerConfig(it) }
@@ -223,14 +224,19 @@ class MainActivity : HelperBaseActivity() {
     }
 
     private fun setupViewModel() {
-        mainViewModel.isRunning.observe(this) { _ ->
-            // isRunningFlow is used in Compose, no need to call applyRunningState
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                mainViewModel.updateGroupsAction.collect {
+                    setupGroupTab()
+                }
+            }
         }
-        mainViewModel.updateGroupsAction.observe(this) {
-            setupGroupTab()
-        }
-        mainViewModel.startServiceAction.observe(this) {
-            startV2Ray()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                mainViewModel.startServiceAction.collect {
+                    startV2Ray()
+                }
+            }
         }
         mainViewModel.startListenBroadcast()
         mainViewModel.initAssets(assets)
@@ -310,7 +316,7 @@ class MainActivity : HelperBaseActivity() {
 
         val intent = Intent(this, activityClass)
             .putExtra("guid", guid)
-            .putExtra("isRunning", mainViewModel.isRunning.value)
+            .putExtra("isRunning", mainViewModel.isRunningFlow.value)
             .putExtra("createConfigType", profile.configType.value)
             .putExtra("subscriptionId", mainViewModel.subscriptionId)
 
@@ -342,9 +348,9 @@ class MainActivity : HelperBaseActivity() {
     }
 
     private fun handleFabAction() {
-        if (mainViewModel.isRunning.value == true) {
+        if (mainViewModel.isRunningFlow.value) {
             CoreServiceManager.stopVService(this)
-        } else if (mainViewModel.isLoadingFlow.value == true) {
+        } else if (mainViewModel.isLoadingFlow.value) {
             AutoBestConfigManager.stop()
             mainViewModel.setLoading(false)
         } else {
@@ -378,7 +384,7 @@ class MainActivity : HelperBaseActivity() {
             MmkvManager.setSelectServer(guid)
             mainViewModel.updateSelectedGuid()
 
-            if (mainViewModel.isRunning.value == true) {
+            if (mainViewModel.isRunningFlow.value) {
                 restartV2Ray()
             } else {
                 AutoBestConfigManager.stop()
@@ -400,7 +406,7 @@ class MainActivity : HelperBaseActivity() {
     }
 
     fun restartV2Ray() {
-        if (mainViewModel.isRunning.value == true) {
+        if (mainViewModel.isRunningFlow.value) {
             CoreServiceManager.stopVService(this)
         }
         lifecycleScope.launch {
