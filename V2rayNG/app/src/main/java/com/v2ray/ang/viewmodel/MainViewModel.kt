@@ -21,7 +21,6 @@ import com.v2ray.ang.dto.entities.SubscriptionCache
 import com.v2ray.ang.extension.isComplexType
 import com.v2ray.ang.extension.matchesPattern
 import com.v2ray.ang.extension.toastError
-import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsManager
@@ -483,17 +482,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     AppConfig.MSG_STATE_RUNNING -> {
                         isRunning.value = true
                         _isRunningFlow.value = true
+                        _isLoadingFlow.value = false
                     }
 
                     AppConfig.MSG_STATE_NOT_RUNNING -> {
                         isRunning.value = false
                         _isRunningFlow.value = false
+                        _isLoadingFlow.value = false
                     }
 
                     AppConfig.MSG_STATE_START_SUCCESS -> {
-                        getApplication<Application>().toastSuccess(R.string.toast_services_success)
                         isRunning.value = true
                         _isRunningFlow.value = true
+                        _isLoadingFlow.value = false
                     }
 
                     AppConfig.MSG_STATE_START_FAILURE -> {
@@ -504,11 +505,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         isRunning.value = false
                         _isRunningFlow.value = false
+                        _isLoadingFlow.value = false
                     }
 
                     AppConfig.MSG_STATE_STOP_SUCCESS -> {
                         isRunning.value = false
                         _isRunningFlow.value = false
+                        _isLoadingFlow.value = false
                     }
 
                     AppConfig.MSG_MEASURE_DELAY_SUCCESS -> {

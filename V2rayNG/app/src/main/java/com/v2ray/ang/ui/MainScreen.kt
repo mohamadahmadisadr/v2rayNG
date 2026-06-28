@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -104,19 +105,45 @@ fun MainScreen(
             },
             floatingActionButton = {
                 if (currentScreen == Screen.Home) {
+                    val isLoading by mainViewModel.isLoadingFlow.collectAsStateWithLifecycle()
+
+                    val fabColor = when {
+                        isLoading -> MaterialTheme.colorScheme.secondaryContainer
+                        isRunning -> Color(0xFF4CAF50) // Green for Connected
+                        else -> MaterialTheme.colorScheme.primary // Primary for Disconnected
+                    }
+
+                    val fabContentColor = when {
+                        isRunning && !isLoading -> Color.White
+                        else -> contentColorFor(fabColor)
+                    }
+
+                    val fabText = when {
+                        isLoading && isRunning -> "Stopping..."
+                        isLoading -> "Connecting..."
+                        isRunning -> stringResource(R.string.notification_action_stop_v2ray)
+                        else -> stringResource(R.string.tasker_start_service)
+                    }
+
                     ExtendedFloatingActionButton(
                         onClick = onFabClick,
-                        icon = { 
-                            Icon(
-                                painter = painterResource(if (isRunning) R.drawable.ic_stop_24dp else R.drawable.ic_play_24dp),
-                                contentDescription = null
-                            ) 
+                        icon = {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = fabContentColor
+                                )
+                            } else {
+                                Icon(
+                                    painter = painterResource(if (isRunning) R.drawable.ic_stop_24dp else R.drawable.ic_play_24dp),
+                                    contentDescription = null
+                                )
+                            }
                         },
-                        text = { 
-                            Text(stringResource(if (isRunning) R.string.notification_action_stop_v2ray else R.string.tasker_start_service)) 
-                        },
-                        containerColor = if (isRunning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                        contentColor = if (isRunning) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary
+                        text = { Text(fabText) },
+                        containerColor = fabColor,
+                        contentColor = fabContentColor
                     )
                 }
             },

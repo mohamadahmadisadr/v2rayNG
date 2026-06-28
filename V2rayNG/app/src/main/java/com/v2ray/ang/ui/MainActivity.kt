@@ -59,7 +59,7 @@ class MainActivity : HelperBaseActivity() {
         if (it.resultCode == RESULT_OK) {
             startV2Ray()
         } else {
-            applyRunningState(isLoading = false, isRunning = mainViewModel.isRunning.value == true)
+            mainViewModel.setLoading(false)
         }
     }
     private val requestActivityLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -188,8 +188,8 @@ class MainActivity : HelperBaseActivity() {
     }
 
     private fun setupViewModel() {
-        mainViewModel.isRunning.observe(this) { isRunning ->
-            applyRunningState(false, isRunning)
+        mainViewModel.isRunning.observe(this) { _ ->
+            // isRunningFlow is used in Compose, no need to call applyRunningState
         }
         mainViewModel.startListenBroadcast()
         mainViewModel.initAssets(assets)
@@ -318,7 +318,7 @@ class MainActivity : HelperBaseActivity() {
             return
         }
 
-        applyRunningState(isLoading = true, isRunning = mainViewModel.isRunning.value == true)
+        mainViewModel.setLoading(true)
 
         if (mainViewModel.isRunning.value == true) {
             CoreServiceManager.stopVService(this)
@@ -350,10 +350,6 @@ class MainActivity : HelperBaseActivity() {
             delay(500)
             startV2Ray()
         }
-    }
-
-    private fun applyRunningState(isLoading: Boolean, isRunning: Boolean) {
-        mainViewModel.setLoading(isLoading)
     }
 
     private fun importManually(createConfigType: Int) {
