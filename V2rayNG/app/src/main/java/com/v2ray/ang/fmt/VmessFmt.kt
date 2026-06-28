@@ -48,7 +48,7 @@ object VmessFmt : FmtBase() {
         config.remarks = vmessQRCode.ps
         config.server = vmessQRCode.add
         config.serverPort = vmessQRCode.port
-        config.password = vmessQRCode.id
+        config.password = vmessQRCode.id?.trim()
         config.method =
             if (TextUtils.isEmpty(vmessQRCode.scy)) AppConfig.DEFAULT_SECURITY else vmessQRCode.scy
 
@@ -158,21 +158,25 @@ object VmessFmt : FmtBase() {
      * @return the parsed ProfileItem object, or null if parsing fails
      */
     fun parseVmessStd(str: String): ProfileItem? {
-        val config = ProfileItem.create(EConfigType.VMESS)
+        try {
+            val config = ProfileItem.create(EConfigType.VMESS)
 
-        val uri = URI(Utils.fixIllegalUrl(str))
-        if (uri.rawQuery.isNullOrEmpty()) return null
-        val queryParam = getQueryParam(uri)
+            val uri = URI(Utils.fixIllegalUrl(str))
+            if (uri.rawQuery.isNullOrEmpty()) return null
+            val queryParam = getQueryParam(uri)
 
-        config.remarks = Utils.decodeURIComponent(uri.fragment.orEmpty()).let { it.ifEmpty { "none" } }
-        config.server = uri.idnHost
-        config.serverPort = uri.port.toString()
-        config.password = uri.userInfo
-        config.method = AppConfig.DEFAULT_SECURITY
+            config.remarks = Utils.decodeURIComponent(uri.fragment.orEmpty())?.let { it.ifEmpty { "none" } } ?: "none"
+            config.server = uri.idnHost
+            config.serverPort = uri.port.toString()
+            config.password = Utils.decodeURIComponent(uri.userInfo.orEmpty())?.trim() ?: return null
+            config.method = AppConfig.DEFAULT_SECURITY
 
-        getItemFormQuery(config, queryParam)
+            getItemFormQuery(config, queryParam)
 
-        return config
+            return config
+        } catch (_: Exception) {
+            return null
+        }
     }
 
 

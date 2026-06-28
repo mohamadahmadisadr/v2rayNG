@@ -50,6 +50,40 @@ object CoreConfigManager {
     }
 
     /**
+     * Build a lightweight configuration for latency testing from a ProfileItem.
+     */
+    fun getV2rayConfig4Speedtest(context: Context, profileItem: ProfileItem, portOverride: Int = 0): ConfigResult {
+        try {
+            val configContext = CoreConfigContext(
+                context = context,
+                guid = "",
+                resolvedOutbounds = listOf(
+                    CoreConfigContext.ResolvedOutbound(
+                        tag = AppConfig.TAG_PROXY,
+                        profile = profileItem,
+                        resolvedProfiles = listOf(profileItem),
+                        resolvedType = CoreResolvedType.NORMAL
+                    )
+                )
+            )
+            val v2rayConfig = buildUnifiedConfig(configContext)
+            if (portOverride > 0 && v2rayConfig.inbounds.isNotEmpty()) {
+                v2rayConfig.inbounds[0].port = portOverride
+            }
+            postProcessForSpeedtest(v2rayConfig)
+
+            return toConfigResult(configContext, v2rayConfig)
+        } catch (e: Exception) {
+            LogUtil.e(AppConfig.TAG, "Failed to get V2ray config for speedtest", e)
+            return ConfigResult(
+                status = false,
+                guid = "",
+                errorMessage = "Failed to get V2ray config for speedtest: ${e.message ?: e.javaClass.simpleName}"
+            )
+        }
+    }
+
+    /**
      * Build a lightweight configuration for latency testing.
      *
      * The core flow is reused, then non-essential sections are removed.
@@ -399,7 +433,17 @@ object CoreConfigManager {
         v2rayConfig.fakedns = null
         v2rayConfig.stats = null
         v2rayConfig.policy = null
-        v2rayConfig.outbounds.forEach { key -> key.mux = null }
+        v2rayConfig.outbounds.forEach { key -> 
+            key.mux = null 
+            key.connectTimeout = 3 // 3 seconds for speedtest
+            
+            // For speedtest, ensure clean and fast-failing dialer
+            val sockopt = key.ensureSockopt()
+            sockopt.dialerProxy = ""
+            sockopt.mark = 0
+            sockopt.tcpFastOpen = false
+            sockopt.tproxy = "off"
+        }
     }
 
     /**
@@ -494,16 +538,14 @@ object CoreConfigManager {
             inbound1.sniffing?.destOverride?.add("fakedns")
         }
 
-        if (!Utils.isXray()) {
-            val inbound2 = JsonUtil.fromJson(JsonUtil.toJson(inbound1), V2rayConfig.InboundBean::class.java)
-                ?: error("Failed to clone inbound template")
-            inbound2.tag = EConfigType.HTTP.name.lowercase()
-            inbound2.port = SettingsManager.getHttpPort()
-            inbound2.protocol = EConfigType.HTTP.name.lowercase()
-            inbound2.settings?.auth = null
-            inbound2.settings?.udp = null
-            v2rayConfig.inbounds.add(inbound2)
-        }
+        val inbound2 = JsonUtil.fromJson(JsonUtil.toJson(inbound1), V2rayConfig.InboundBean::class.java)
+            ?: error("Failed to clone inbound template")
+        inbound2.tag = EConfigType.HTTP.name.lowercase()
+        inbound2.port = SettingsManager.getHttpPort()
+        inbound2.protocol = EConfigType.HTTP.name.lowercase()
+        inbound2.settings?.auth = null
+        inbound2.settings?.udp = null
+        v2rayConfig.inbounds.add(inbound2)
 
         if (!enableLocalProxy) {
             v2rayConfig.inbounds.removeIf { it.protocol == "socks" || it.protocol == "http" }

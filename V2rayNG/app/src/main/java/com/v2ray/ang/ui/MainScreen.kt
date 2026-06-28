@@ -2,18 +2,30 @@ package com.v2ray.ang.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.border
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -22,10 +34,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.v2ray.ang.R
 import com.v2ray.ang.dto.GroupMapItem
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentContainerView
@@ -41,7 +49,6 @@ sealed class Screen(val route: String, val title: Int, val icon: ImageVector, va
 @Composable
 fun MainScreen(
     mainViewModel: MainViewModel,
-    groups: List<GroupMapItem>,
     isRunning: Boolean,
     onFabClick: () -> Unit,
     onMenuClick: (Int) -> Unit,
@@ -52,10 +59,9 @@ fun MainScreen(
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    var showImportMenu by remember { mutableStateOf(false) }
+    var showOptionsMenu by remember { mutableStateOf(false) }
     
-    // Move pagerState to HomeContent if we want it to persist, or keep here.
-    // For simplicity, let's keep the Scaffold here and swap the content.
-
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = currentScreen == Screen.Home,
@@ -83,8 +89,25 @@ fun MainScreen(
                     },
                     actions = {
                         if (currentScreen == Screen.Home) {
-                            IconButton(onClick = { onMenuClick(R.id.import_qrcode) }) {
-                                Icon(painterResource(R.drawable.ic_add_24dp), contentDescription = null)
+                            Box {
+                                IconButton(onClick = { showImportMenu = true }) {
+                                    Icon(painterResource(R.drawable.ic_add_24dp), contentDescription = null)
+                                }
+                                ImportConfigDropdownMenu(
+                                    expanded = showImportMenu,
+                                    onDismiss = { showImportMenu = false },
+                                    onItemClick = onMenuClick
+                                )
+                            }
+                            Box {
+                                IconButton(onClick = { showOptionsMenu = true }) {
+                                    Icon(painterResource(R.drawable.ic_more_vert_24dp), contentDescription = null)
+                                }
+                                MainOptionsMenu(
+                                    expanded = showOptionsMenu,
+                                    onDismiss = { showOptionsMenu = false },
+                                    onItemClick = onMenuClick
+                                )
                             }
                         }
                     }
@@ -102,58 +125,14 @@ fun MainScreen(
                         )
                     }
                 }
-            },
-            floatingActionButton = {
-                if (currentScreen == Screen.Home) {
-                    val isLoading by mainViewModel.isLoadingFlow.collectAsStateWithLifecycle()
-
-                    val fabColor = when {
-                        isLoading -> MaterialTheme.colorScheme.secondaryContainer
-                        isRunning -> Color(0xFF4CAF50) // Green for Connected
-                        else -> MaterialTheme.colorScheme.primary // Primary for Disconnected
-                    }
-
-                    val fabContentColor = when {
-                        isRunning && !isLoading -> Color.White
-                        else -> contentColorFor(fabColor)
-                    }
-
-                    val fabText = when {
-                        isLoading && isRunning -> "Stopping..."
-                        isLoading -> "Connecting..."
-                        isRunning -> stringResource(R.string.notification_action_stop_v2ray)
-                        else -> stringResource(R.string.tasker_start_service)
-                    }
-
-                    ExtendedFloatingActionButton(
-                        onClick = onFabClick,
-                        icon = {
-                            if (isLoading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp,
-                                    color = fabContentColor
-                                )
-                            } else {
-                                Icon(
-                                    painter = painterResource(if (isRunning) R.drawable.ic_stop_24dp else R.drawable.ic_play_24dp),
-                                    contentDescription = null
-                                )
-                            }
-                        },
-                        text = { Text(fabText) },
-                        containerColor = fabColor,
-                        contentColor = fabContentColor
-                    )
-                }
-            },
-            floatingActionButtonPosition = FabPosition.Center
+            }
         ) { padding ->
             Box(modifier = Modifier.padding(padding)) {
                 when (currentScreen) {
                     Screen.Home -> HomeContent(
                         mainViewModel = mainViewModel,
-                        groups = groups,
+                        isRunning = isRunning,
+                        onFabClick = onFabClick,
                         onSelectServer = onSelectServer,
                         onMoreClick = onMoreClick
                     )
@@ -167,68 +146,177 @@ fun MainScreen(
 @Composable
 fun HomeContent(
     mainViewModel: MainViewModel,
-    groups: List<GroupMapItem>,
+    isRunning: Boolean,
+    onFabClick: () -> Unit,
     onSelectServer: (String) -> Unit,
     onMoreClick: (String, com.v2ray.ang.dto.entities.ProfileItem, Int) -> Unit
 ) {
-    val pagerState = rememberPagerState(pageCount = { groups.size })
-    val scope = rememberCoroutineScope()
+    val isLoading by mainViewModel.isLoadingFlow.collectAsStateWithLifecycle()
+    val autoBestProgress by mainViewModel.autoBestProgressFlow.collectAsStateWithLifecycle()
 
-    // Sync pager with selected subscription
-    LaunchedEffect(mainViewModel.subscriptionId, groups) {
-        val targetIndex = groups.indexOfFirst { it.id == mainViewModel.subscriptionId }.takeIf { it >= 0 }
-        if (targetIndex != null && targetIndex != pagerState.currentPage && targetIndex < groups.size) {
-            pagerState.scrollToPage(targetIndex)
-        }
-    }
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Main Connection Area - Give it more space and allow internal scrolling if needed
+        Box(
+            modifier = Modifier
+                .weight(1.5f)
+                .fillMaxWidth()
+                .padding(top = 16.dp),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Connection Status
+                Text(
+                    text = when {
+                        isLoading -> "SEARCHING..."
+                        isRunning -> "CONNECTED"
+                        else -> "DISCONNECTED"
+                    },
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = when {
+                        isRunning -> Color(0xFF4CAF50)
+                        isLoading -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.outline
+                    }
+                )
+                
+                Spacer(modifier = Modifier.height(32.dp))
 
-    LaunchedEffect(pagerState.currentPage, groups) {
-        if (groups.isNotEmpty() && pagerState.currentPage < groups.size) {
-            val subId = groups[pagerState.currentPage].id
-            if (subId != mainViewModel.subscriptionId) {
-                mainViewModel.subscriptionIdChanged(subId)
-            }
-        }
-    }
-
-    Column {
-        if (groups.size > 1) {
-            ScrollableTabRow(
-                selectedTabIndex = pagerState.currentPage,
-                edgePadding = 16.dp,
-                divider = {},
-                indicator = { tabPositions ->
-                    if (pagerState.currentPage < tabPositions.size) {
-                        TabRowDefaults.SecondaryIndicator(
-                            Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage])
+                // Connection Button and Progress Ring
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                ) {
+                    // Outer Progress / Status Ring
+                    if (isLoading || isRunning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(200.dp), // slightly larger than button
+                            progress = { if (isRunning) 1f else 0.7f },
+                            color = if (isRunning) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary,
+                            strokeWidth = 4.dp,
+                            trackColor = if (isRunning) Color(0xFF4CAF50).copy(alpha = 0.1f) else MaterialTheme.colorScheme.surfaceVariant,
+                            strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                         )
                     }
-                }
-            ) {
-                groups.forEachIndexed { index, group ->
-                    Tab(
-                        selected = pagerState.currentPage == index,
-                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                        text = { Text(group.remarks) }
+
+                    ConnectionCircleButton(
+                        isRunning = isRunning,
+                        isLoading = isLoading,
+                        onClick = onFabClick
                     )
                 }
+
+                // New Design for Progress Stats
+                if (isLoading && autoBestProgress.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier
+                            .padding(top = 24.dp)
+                            .padding(horizontal = 32.dp),
+                        shape = CircleShape,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f)
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Speed,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = autoBestProgress,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                } else if (isRunning) {
+                    Text(
+                        text = "SECURE CONNECTION ACTIVE",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color(0xFF4CAF50),
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 24.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
             }
         }
 
-        // Progress Indicator
-        val isLoading by mainViewModel.isLoadingFlow.collectAsStateWithLifecycle()
-        if (isLoading) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
-        
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize()
-        ) { page ->
+        // Server List at the bottom
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
             ServerListScreen(
                 mainViewModel = mainViewModel,
                 onSelect = onSelectServer,
                 onMoreClick = onMoreClick
+            )
+        }
+    }
+}
+
+@Composable
+fun ConnectionCircleButton(
+    isRunning: Boolean,
+    isLoading: Boolean,
+    onClick: () -> Unit
+) {
+    val buttonSize = 160.dp // Reduced from 200dp to save vertical space
+    val color = when {
+        isLoading -> MaterialTheme.colorScheme.primaryContainer
+        isRunning -> Color(0xFF4CAF50)
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+
+    Box(
+        modifier = Modifier
+            .size(buttonSize)
+            .clip(CircleShape)
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(color.copy(alpha = 0.8f), color)
+                )
+            )
+            .border(
+                width = 8.dp,
+                color = color.copy(alpha = 0.3f),
+                shape = CircleShape
+            )
+            .clickable(enabled = !isLoading) { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(buttonSize * 0.6f),
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                strokeWidth = 4.dp
+            )
+        } else {
+            Icon(
+                painter = painterResource(if (isRunning) R.drawable.ic_stop_24dp else R.drawable.ic_play_24dp),
+                contentDescription = null,
+                modifier = Modifier.size(buttonSize * 0.4f),
+                tint = if (isRunning) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -307,3 +395,100 @@ fun DrawerContent(onDrawerItemClick: (Int) -> Unit) {
 }
 
 data class DrawerItemData(val id: Int, val icon: Int, val title: Int)
+
+@Composable
+fun ImportConfigDropdownMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onItemClick: (Int) -> Unit
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss
+    ) {
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.menu_item_import_config_qrcode)) },
+            onClick = { onItemClick(R.id.import_qrcode); onDismiss() }
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.menu_item_import_config_clipboard)) },
+            onClick = { onItemClick(R.id.import_clipboard); onDismiss() }
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.menu_item_import_config_local)) },
+            onClick = { onItemClick(R.id.import_local); onDismiss() }
+        )
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.menu_item_import_config_manually_vmess)) },
+            onClick = { onItemClick(R.id.import_manually_vmess); onDismiss() }
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.menu_item_import_config_manually_vless)) },
+            onClick = { onItemClick(R.id.import_manually_vless); onDismiss() }
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.menu_item_import_config_manually_ss)) },
+            onClick = { onItemClick(R.id.import_manually_ss); onDismiss() }
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.menu_item_import_config_manually_trojan)) },
+            onClick = { onItemClick(R.id.import_manually_trojan); onDismiss() }
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.menu_item_import_config_manually_hysteria2)) },
+            onClick = { onItemClick(R.id.import_manually_hysteria2); onDismiss() }
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.menu_item_import_config_manually_wireguard)) },
+            onClick = { onItemClick(R.id.import_manually_wireguard); onDismiss() }
+        )
+    }
+}
+
+@Composable
+fun MainOptionsMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onItemClick: (Int) -> Unit
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss
+    ) {
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.title_sub_update)) },
+            onClick = { onItemClick(R.id.sub_update); onDismiss() }
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.title_real_ping_all_server)) },
+            onClick = { onItemClick(R.id.real_ping_all); onDismiss() }
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.title_sort_by_test_results)) },
+            onClick = { onItemClick(R.id.sort_by_test_results); onDismiss() }
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.title_service_restart)) },
+            onClick = { onItemClick(R.id.service_restart); onDismiss() }
+        )
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.title_del_duplicate_config)) },
+            onClick = { onItemClick(R.id.del_duplicate_config); onDismiss() }
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.title_del_invalid_config)) },
+            onClick = { onItemClick(R.id.del_invalid_config); onDismiss() }
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.title_del_all_config)) },
+            onClick = { onItemClick(R.id.del_all_config); onDismiss() }
+        )
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.title_export_all)) },
+            onClick = { onItemClick(R.id.export_all); onDismiss() }
+        )
+    }
+}

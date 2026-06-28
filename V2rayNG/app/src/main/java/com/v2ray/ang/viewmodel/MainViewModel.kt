@@ -22,22 +22,32 @@ import com.v2ray.ang.extension.isComplexType
 import com.v2ray.ang.extension.matchesPattern
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.handler.AngConfigManager
+import com.v2ray.ang.handler.AutoBestConfigManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.MessageUtil
 import com.v2ray.ang.util.Utils
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.Collections
 import java.util.regex.PatternSyntaxException
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-    private var serverList = mutableListOf<String>() // MmkvManager.decodeServerList()
-    var subscriptionId: String = MmkvManager.decodeSettingsString(AppConfig.CACHE_SUBSCRIPTION_ID, "").orEmpty()
+    private var serverList = mutableListOf<String>()
+    
+    private val _subscriptionIdFlow = MutableStateFlow(MmkvManager.decodeSettingsString(AppConfig.CACHE_SUBSCRIPTION_ID, "").orEmpty())
+    val subscriptionIdFlow = _subscriptionIdFlow.asStateFlow()
+    
+    var subscriptionId: String
+        get() = _subscriptionIdFlow.value
+        set(value) {
+            _subscriptionIdFlow.value = value
+            MmkvManager.encodeSettings(AppConfig.CACHE_SUBSCRIPTION_ID, value)
+        }
+
     var keywordFilter = ""
     val serversCache = mutableListOf<ServersCache>()
     private val _isRunningFlow = MutableStateFlow(false)
@@ -47,12 +57,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isRunning by lazy { MutableLiveData<Boolean>() }
     val updateListAction by lazy { MutableLiveData<Int>() }
     val updateTestResultAction by lazy { MutableLiveData<String>() }
+    val updateGroupsAction by lazy { MutableLiveData<Unit>() }
+    val startServiceAction by lazy { MutableLiveData<Unit>() }
 
     private val _isLoadingFlow = MutableStateFlow(false)
     val isLoadingFlow = _isLoadingFlow.asStateFlow()
 
+    private val _autoBestProgressFlow = MutableStateFlow("")
+    val autoBestProgressFlow = _autoBestProgressFlow.asStateFlow()
+
     fun setLoading(loading: Boolean) {
         _isLoadingFlow.value = loading
+    }
+
+    fun startAutoBestConfig() {
+        _isLoadingFlow.value = true
+        // Clear filter immediately to show fresh progress
+        subscriptionId = AppConfig.AUTO_BEST_SUBSCRIPTION_ID
+        keywordFilter = ""
+        reloadServerList()
+        updateGroupsAction.postValue(Unit)
+
+        AutoBestConfigManager.start(
+            getApplication<Application>(),
+            onProgress = { progress: String ->
+                _autoBestProgressFlow.value = progress
+            },
+            onComplete = { bestGuids: List<String> ->
+                if (bestGuids.isEmpty()) {
+                    // Incremental update signal
+                    reloadServerList()
+                    return@start
+                }
+                
+                _isLoadingFlow.value = false
+                _autoBestProgressFlow.value = ""
+                
+                // 1. Select the best one in MMKV first
+                MmkvManager.setSelectServer(bestGuids.first())
+                
+                // 2. Reload list and cache, then trigger actions
+                reloadServerList {
+                    updateGroupsAction.postValue(Unit)
+                    updateSelectedGuid()
+                    startServiceAction.postValue(Unit)
+                }
+            }
+        )
     }
 
     private val _serversCacheFlow = MutableStateFlow<List<ServersCache>>(emptyList())
@@ -105,20 +156,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
     }
 
+    private var reloadJob: Job? = null
+
     /**
      * Reloads the server list based on current subscription filter.
      */
-    fun reloadServerList() {
-        viewModelScope.launch(Dispatchers.IO) {
-            serverList = if (subscriptionId.isEmpty()) {
+    fun reloadServerList(onComplete: (() -> Unit)? = null) {
+        reloadJob?.cancel()
+        reloadJob = viewModelScope.launch(Dispatchers.IO) {
+            val list = if (subscriptionId.isEmpty()) {
                 MmkvManager.decodeAllServerList()
             } else {
                 MmkvManager.decodeServerList(subscriptionId)
             }
 
-            updateCache()
+            synchronized(this@MainViewModel) {
+                serverList = list
+                updateCache()
+            }
+
             withContext(Dispatchers.Main) {
                 updateListAction.value = -1
+                onComplete?.invoke()
             }
         }
     }
@@ -278,6 +337,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun getSubscriptions(context: Context): List<GroupMapItem> {
         val subscriptions = MmkvManager.decodeSubscriptions()
         if (subscriptionId.isNotEmpty()
+            && subscriptionId != AppConfig.AUTO_BEST_SUBSCRIPTION_ID
             && !subscriptions.map { it.guid }.contains(subscriptionId)
         ) {
             subscriptionIdChanged("")
@@ -292,6 +352,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
         }
+
+        // Add Auto-Best group if it has items or is currently selected
+        val autoBestCount = MmkvManager.decodeServerList(AppConfig.AUTO_BEST_SUBSCRIPTION_ID).size
+        if (autoBestCount > 0 || subscriptionId == AppConfig.AUTO_BEST_SUBSCRIPTION_ID) {
+            groups.add(
+                GroupMapItem(
+                    id = AppConfig.AUTO_BEST_SUBSCRIPTION_ID,
+                    remarks = "Auto Best Discovery"
+                )
+            )
+        }
+
         subscriptions.forEach { sub ->
             groups.add(
                 GroupMapItem(
@@ -340,7 +412,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         return@forEachIndexed
                     }
 
-                    if (profile == profile2 && !deleteServer.contains(sc2.guid)) {
+                    if (profile.isSameConfig(profile2) && !deleteServer.contains(sc2.guid)) {
                         deleteServer.add(sc2.guid)
                     }
                 }

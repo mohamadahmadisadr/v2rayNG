@@ -34,14 +34,15 @@ object ShadowsocksFmt : FmtBase() {
         if (uri.port <= 0) return null
         if (uri.userInfo.isNullOrEmpty()) return null
 
-        config.remarks = Utils.decodeURIComponent(uri.fragment.orEmpty()).let { it.ifEmpty { "none" } }
+        config.remarks = Utils.decodeURIComponent(uri.fragment.orEmpty())?.let { it.ifEmpty { "none" } } ?: "none"
         config.server = uri.idnHost
         config.serverPort = uri.port.toString()
 
-        val result = if (uri.userInfo.contains(":")) {
-            uri.userInfo.split(":", limit = 2)
+        val userInfo = uri.userInfo.orEmpty()
+        val result = if (userInfo.contains(":")) {
+            userInfo.split(":", limit = 2)
         } else {
-            Utils.decode(uri.userInfo).split(":", limit = 2)
+            Utils.decode(userInfo).split(":", limit = 2)
         }
         if (result.count() == 2) {
             config.method = result.first()
@@ -81,7 +82,7 @@ object ShadowsocksFmt : FmtBase() {
         if (indexSplit > 0) {
             try {
                 config.remarks =
-                    Utils.decodeURIComponent(result.substring(indexSplit + 1, result.length))
+                    Utils.decodeURIComponent(result.substring(indexSplit + 1, result.length)) ?: "none"
             } catch (e: Exception) {
                 LogUtil.e(AppConfig.TAG, "Failed to decode remarks in SS legacy URL", e)
             }

@@ -18,33 +18,37 @@ object Hysteria2Fmt : FmtBase() {
      * @param str the Hysteria2 URI string to parse
      * @return the parsed ProfileItem object, or null if parsing fails
      */
-    fun parse(str: String): ProfileItem {
-        val config = ProfileItem.create(EConfigType.HYSTERIA2)
+    fun parse(str: String): ProfileItem? {
+        try {
+            val config = ProfileItem.create(EConfigType.HYSTERIA2)
 
-        val uri = URI(Utils.fixIllegalUrl(str))
-        config.remarks = Utils.decodeURIComponent(uri.fragment.orEmpty()).let { it.ifEmpty { "none" } }
-        config.server = uri.idnHost
-        config.serverPort = uri.port.toString()
-        config.password = uri.userInfo
-        config.security = AppConfig.TLS
-        config.network = NetworkType.HYSTERIA.type
+            val uri = URI(Utils.fixIllegalUrl(str))
+            config.remarks = Utils.decodeURIComponent(uri.fragment.orEmpty())?.let { it.ifEmpty { "none" } } ?: "none"
+            config.server = uri.idnHost
+            config.serverPort = uri.port.toString()
+            config.password = uri.userInfo
+            config.security = AppConfig.TLS
+            config.network = NetworkType.HYSTERIA.type
 
-        if (!uri.rawQuery.isNullOrEmpty()) {
-            val queryParam = getQueryParam(uri)
+            if (!uri.rawQuery.isNullOrEmpty()) {
+                val queryParam = getQueryParam(uri)
 
-            getItemFormQuery(config, queryParam)
+                getItemFormQuery(config, queryParam)
 
-            config.security = queryParam["security"] ?: AppConfig.TLS
-            config.obfsPassword = queryParam["obfs-password"]
-            config.portHopping = queryParam["mport"]
-            if (config.portHopping.isNotNullEmpty()) {
-                config.portHoppingInterval = queryParam["mportHopInt"]
+                config.security = queryParam["security"] ?: AppConfig.TLS
+                config.obfsPassword = queryParam["obfs-password"]
+                config.portHopping = queryParam["mport"]
+                if (config.portHopping.isNotNullEmpty()) {
+                    config.portHoppingInterval = queryParam["mportHopInt"]
+                }
+                config.pinnedCA256 = queryParam["pinSHA256"]
+
             }
-            config.pinnedCA256 = queryParam["pinSHA256"]
 
+            return config
+        } catch (_: Exception) {
+            return null
         }
-
-        return config
     }
 
     /**

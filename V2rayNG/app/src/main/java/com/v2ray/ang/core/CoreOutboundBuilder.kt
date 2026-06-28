@@ -2,6 +2,10 @@ package com.v2ray.ang.core
 
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import com.google.gson.stream.JsonReader
+import java.io.StringReader
+import java.net.URLDecoder
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.dto.V2rayConfig.OutboundBean
 import com.v2ray.ang.dto.entities.ProfileItem
@@ -433,7 +437,26 @@ object CoreOutboundBuilder {
                 sni = host
                 xhttpSetting.path = path ?: "/"
                 xhttpSetting.mode = xhttpMode
-                xhttpSetting.extra = JsonUtil.parseString(xhttpExtra)
+                
+                val extraJson = xhttpExtra?.let { s ->
+                    if (s.contains("%7B") || s.contains("%22") || s.contains("%7b")) {
+                        runCatching { URLDecoder.decode(s, "UTF-8") }.getOrDefault(s)
+                    } else s
+                }
+                
+                xhttpSetting.extra = if (extraJson != null) {
+                    try {
+                        JsonUtil.parseString(extraJson)
+                    } catch (_: Exception) {
+                        runCatching {
+                            val reader = JsonReader(StringReader(extraJson))
+                            @Suppress("DEPRECATION")
+                            reader.isLenient = true
+                            JsonParser.parseReader(reader).asJsonObject
+                        }.getOrNull()
+                    }
+                } else null
+
                 streamSettings.xhttpSettings = xhttpSetting
             }
 
@@ -548,7 +571,6 @@ object CoreOutboundBuilder {
      */
     fun populateTlsSettings(streamSettings: OutboundBean.StreamSettingsBean, profileItem: ProfileItem, sniExt: String?) {
         val streamSecurity = profileItem.security.orEmpty()
-        val allowInsecure = profileItem.insecure == true && profileItem.pinnedCA256.isNullOrEmpty()
         val sni = if (profileItem.sni.isNullOrEmpty()) {
             when {
                 sniExt.isNotNullEmpty() && Utils.isDomainName(sniExt) -> sniExt
@@ -562,12 +584,12 @@ object CoreOutboundBuilder {
         streamSettings.security = streamSecurity.nullIfBlank()
         if (streamSettings.security == null) return
         val tlsSetting = OutboundBean.StreamSettingsBean.TlsSettingsBean(
-            allowInsecure = allowInsecure,
+            allowInsecure = null,
             serverName = sni.nullIfBlank(),
             fingerprint = profileItem.fingerPrint.nullIfBlank(),
             alpn = profileItem.alpn?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }.takeIf { !it.isNullOrEmpty() },
             echConfigList = profileItem.echConfigList.nullIfBlank(),
-            verifyPeerCertByName = profileItem.verifyPeerCertByName.nullIfBlank(),
+            verifyPeerCertByName = if (profileItem.insecure == true) "" else profileItem.verifyPeerCertByName.nullIfBlank(),
             pinnedPeerCertSha256 = profileItem.pinnedCA256.nullIfBlank(),
             publicKey = profileItem.publicKey.nullIfBlank(),
             shortId = profileItem.shortId.nullIfBlank(),

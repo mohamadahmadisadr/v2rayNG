@@ -134,6 +134,35 @@ object HttpUtil {
     }
 
     /**
+     * Executes a GET request and provides the response body as a sequence of lines.
+     * This is memory-efficient for large responses.
+     */
+    fun streamUrlLines(request: UrlContentRequest, onLines: (Sequence<String>) -> Unit) {
+        val url = request.url ?: return
+        val client = buildOkHttpClient(request.timeout, request.httpPort, request.proxyUsername, request.proxyPassword, followRedirects = true)
+        val requestBuilder = Request.Builder()
+            .url(url)
+            .get()
+            .header("Connection", "close")
+        if (request.httpPort != 0 && !request.proxyUsername.isNullOrBlank() && !request.proxyPassword.isNullOrBlank()) {
+            requestBuilder.header("Proxy-Authorization", Credentials.basic(request.proxyUsername, request.proxyPassword))
+        }
+        try {
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                if (!response.isSuccessful) {
+                    LogUtil.w(AppConfig.TAG, "Failed to stream URL content, code=${response.code}")
+                    return
+                }
+                response.body?.charStream()?.buffered()?.useLines { lines ->
+                    onLines(lines)
+                }
+            }
+        } catch (e: Exception) {
+            LogUtil.e(AppConfig.TAG, "Failed to stream URL content", e)
+        }
+    }
+
+    /**
      * Retrieves the content of a URL as a string with a custom User-Agent header.
      *
      * @param url The URL to fetch content from.
@@ -201,10 +230,10 @@ object HttpUtil {
             val colon = userInfo.indexOf(':')
             val user = runCatching {
                 Utils.decodeURIComponent(if (colon >= 0) userInfo.substring(0, colon) else userInfo)
-            }.getOrDefault(if (colon >= 0) userInfo.substring(0, colon) else userInfo)
+            }.getOrNull() ?: (if (colon >= 0) userInfo.substring(0, colon) else userInfo)
             val pass = runCatching {
                 Utils.decodeURIComponent(if (colon >= 0) userInfo.substring(colon + 1) else "")
-            }.getOrDefault(if (colon >= 0) userInfo.substring(colon + 1) else "")
+            }.getOrNull() ?: (if (colon >= 0) userInfo.substring(colon + 1) else "")
             requestBuilder.header("Authorization", Credentials.basic(user, pass))
         }
     }

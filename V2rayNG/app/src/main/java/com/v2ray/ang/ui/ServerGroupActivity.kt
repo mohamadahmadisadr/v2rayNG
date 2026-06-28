@@ -25,7 +25,7 @@ class ServerGroupActivity : BaseActivity() {
     }
     private val subscriptionId by lazy { intent.getStringExtra("subscriptionId") }
 
-    private var profileState = mutableStateOf(ProfileItem.create(EConfigType.POLICYGROUP))
+    private lateinit var profileState: MutableState<ProfileItem>
     private val subDisplayList = mutableListOf<String>()
     private val subIds = mutableListOf<String>()
 
@@ -34,7 +34,7 @@ class ServerGroupActivity : BaseActivity() {
         
         populateSubscriptionData()
         val config = MmkvManager.decodeServerConfig(editGuid) ?: ProfileItem.create(EConfigType.POLICYGROUP)
-        profileState.value = config
+        profileState = mutableStateOf(config, neverEqualPolicy())
 
         setContent {
             MaterialTheme {
@@ -111,7 +111,7 @@ class ServerGroupActivity : BaseActivity() {
         }
 
         MmkvManager.encodeServerConfig(editGuid, config)
-        if (isRunning) SettingsChangeManager.makeRestartService()
+        SettingsChangeManager.makeRestartService()
         toastSuccess(R.string.toast_success)
         finish()
     }

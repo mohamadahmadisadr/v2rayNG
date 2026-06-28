@@ -69,8 +69,8 @@ data class ProfileItem(
     var proxyChainProfiles: String? = null,
 
     var browserDialerMode: String? = null,
-
-    ) {
+    var guid: String = ""
+) {
     companion object {
         fun create(configType: EConfigType): ProfileItem {
             return ProfileItem(configType = configType)
@@ -84,48 +84,45 @@ data class ProfileItem(
         return Utils.getIpv6Address(server) + ":" + serverPort
     }
 
-    override fun equals(other: Any?): Boolean {
-        if (other == null) return false
-        val obj = other as ProfileItem
+    fun isSameConfig(other: ProfileItem): Boolean {
+        return (this.server == other.server
+                && this.serverPort == other.serverPort
+                && this.password == other.password
+                && this.method == other.method
+                && this.flow == other.flow
+                && this.username == other.username
 
-        return (this.server == obj.server
-                && this.serverPort == obj.serverPort
-                && this.password == obj.password
-                && this.method == obj.method
-                && this.flow == obj.flow
-                && this.username == obj.username
+                && this.network == other.network
+                && this.headerType == other.headerType
+                && this.host == other.host
+                && this.path == other.path
+                && this.seed == other.seed
+                && this.kcpMtu == other.kcpMtu
+                && this.kcpTti == other.kcpTti
+                && this.quicSecurity == other.quicSecurity
+                && this.quicKey == other.quicKey
+                && this.mode == other.mode
+                && this.serviceName == other.serviceName
+                && this.authority == other.authority
+                && this.xhttpMode == other.xhttpMode
 
-                && this.network == obj.network
-                && this.headerType == obj.headerType
-                && this.host == obj.host
-                && this.path == obj.path
-                && this.seed == obj.seed
-                && this.kcpMtu == obj.kcpMtu
-                && this.kcpTti == obj.kcpTti
-                && this.quicSecurity == obj.quicSecurity
-                && this.quicKey == obj.quicKey
-                && this.mode == obj.mode
-                && this.serviceName == obj.serviceName
-                && this.authority == obj.authority
-                && this.xhttpMode == obj.xhttpMode
+                && this.security == other.security
+                && this.sni == other.sni
+                && this.alpn == other.alpn
+                && this.fingerPrint == other.fingerPrint
+                && this.publicKey == other.publicKey
+                && this.shortId == other.shortId
 
-                && this.security == obj.security
-                && this.sni == obj.sni
-                && this.alpn == obj.alpn
-                && this.fingerPrint == obj.fingerPrint
-                && this.publicKey == obj.publicKey
-                && this.shortId == obj.shortId
+                && this.secretKey == other.secretKey
+                && this.localAddress == other.localAddress
+                && this.reserved == other.reserved
+                && this.mtu == other.mtu
 
-                && this.secretKey == obj.secretKey
-                && this.localAddress == obj.localAddress
-                && this.reserved == obj.reserved
-                && this.mtu == obj.mtu
-
-                && this.obfsPassword == obj.obfsPassword
-                && this.portHopping == obj.portHopping
-                && this.portHoppingInterval == obj.portHoppingInterval
-                && this.pinnedCA256 == obj.pinnedCA256
-                && this.proxyChainProfiles == obj.proxyChainProfiles
+                && this.obfsPassword == other.obfsPassword
+                && this.portHopping == other.portHopping
+                && this.portHoppingInterval == other.portHoppingInterval
+                && this.pinnedCA256 == other.pinnedCA256
+                && this.proxyChainProfiles == other.proxyChainProfiles
                 )
     }
 }

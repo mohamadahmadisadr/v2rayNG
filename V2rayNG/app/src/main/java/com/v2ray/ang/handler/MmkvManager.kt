@@ -1,6 +1,7 @@
 package com.v2ray.ang.handler
 
 import com.tencent.mmkv.MMKV
+import com.v2ray.ang.AppConfig
 import com.v2ray.ang.AppConfig.DEFAULT_SUBSCRIPTION_ID
 import com.v2ray.ang.AppConfig.PREF_IS_BOOTED
 import com.v2ray.ang.AppConfig.PREF_ROUTING_RULESET
@@ -126,6 +127,9 @@ object MmkvManager {
             allServers.addAll(decodeServerList(guid))
         }
 
+        // Add servers from Auto-Best subscription
+        allServers.addAll(decodeServerList(AppConfig.AUTO_BEST_SUBSCRIPTION_ID))
+
         return allServers
     }
 
@@ -157,6 +161,7 @@ object MmkvManager {
      */
     fun encodeServerConfig(guid: String, config: ProfileItem): String {
         val key = guid.ifBlank { Utils.getUuid() }
+        config.guid = key
         profileFullStorage.encode(key, JsonUtil.toJson(config))
 
         // Use default subscription for servers without subscription
@@ -182,6 +187,15 @@ object MmkvManager {
      */
     fun encodeProfileDirect(key: String, configJson: String) {
         profileFullStorage.encode(key, configJson)
+    }
+
+    /**
+     * Removes the server configuration directly from profileFullStorage.
+     *
+     * @param key The server GUID.
+     */
+    fun removeProfileDirect(key: String) {
+        profileFullStorage.remove(key)
     }
 
     /**
@@ -686,6 +700,33 @@ object MmkvManager {
         return settingsStorage.containsKey(key)
     }
 
+    fun removeSettings(key: String) {
+        settingsStorage.removeValueForKey(key)
+    }
+
+    private const val KEY_BLACKLIST = "blacklist_servers"
+
+    fun blacklistConfig(serverKey: String) {
+        val blacklist = decodeSettingsStringSet(KEY_BLACKLIST) ?: mutableSetOf()
+        blacklist.add("$serverKey|${System.currentTimeMillis()}")
+        encodeSettings(KEY_BLACKLIST, blacklist)
+    }
+
+    fun isBlacklisted(serverKey: String): Boolean {
+        val blacklist = decodeSettingsStringSet(KEY_BLACKLIST) ?: return false
+        val now = System.currentTimeMillis()
+        val entry = blacklist.find { it.startsWith("$serverKey|") } ?: return false
+        val timestamp = entry.substringAfter("|").toLongOrNull() ?: 0L
+        // Blacklist expires after 24 hours
+        if (now - timestamp > 24 * 60 * 60 * 1000L) {
+            val updatedBlacklist = blacklist.toMutableSet()
+            updatedBlacklist.remove(entry)
+            encodeSettings(KEY_BLACKLIST, updatedBlacklist)
+            return false
+        }
+        return true
+    }
+
 
     /**
      * Encodes the start on boot setting.
@@ -722,6 +763,30 @@ object MmkvManager {
     fun decodeWebDavConfig(): WebDavConfig? {
         val json = mainStorage.decodeString(KEY_WEBDAV_CONFIG) ?: return null
         return JsonUtil.fromJsonSafe(json, WebDavConfig::class.java)
+    }
+
+    //endregion
+
+    //region Backup & Restore
+
+    /**
+     * Backs up all MMKV data to a directory.
+     *
+     * @param directory The target directory.
+     * @return The number of items backed up.
+     */
+    fun backupAll(directory: String): Long {
+        return MMKV.backupAllToDirectory(directory)
+    }
+
+    /**
+     * Restores all MMKV data from a directory.
+     *
+     * @param directory The source directory.
+     * @return The number of items restored.
+     */
+    fun restoreAll(directory: String): Long {
+        return MMKV.restoreAllFromDirectory(directory)
     }
 
     //endregion

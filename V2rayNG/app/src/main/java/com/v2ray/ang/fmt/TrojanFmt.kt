@@ -16,27 +16,31 @@ object TrojanFmt : FmtBase() {
      * @param str the Trojan URI string to parse
      * @return the parsed ProfileItem object, or null if parsing fails
      */
-    fun parse(str: String): ProfileItem {
-        val config = ProfileItem.create(EConfigType.TROJAN)
+    fun parse(str: String): ProfileItem? {
+        try {
+            val config = ProfileItem.create(EConfigType.TROJAN)
 
-        val uri = URI(Utils.fixIllegalUrl(str))
-        config.remarks = Utils.decodeURIComponent(uri.fragment.orEmpty()).let { it.ifEmpty { "none" } }
-        config.server = uri.idnHost
-        config.serverPort = uri.port.toString()
-        config.password = uri.userInfo
+            val uri = URI(Utils.fixIllegalUrl(str))
+            config.remarks = Utils.decodeURIComponent(uri.fragment.orEmpty())?.let { it.ifEmpty { "none" } } ?: "none"
+            config.server = uri.idnHost
+            config.serverPort = uri.port.toString()
+            config.password = Utils.decodeURIComponent(uri.userInfo.orEmpty())?.trim() ?: return null
 
-        if (uri.rawQuery.isNullOrEmpty()) {
-            config.network = NetworkType.TCP.type
-            config.security = AppConfig.TLS
-            config.insecure = false
-        } else {
-            val queryParam = getQueryParam(uri)
+            if (uri.rawQuery.isNullOrEmpty()) {
+                config.network = NetworkType.TCP.type
+                config.security = AppConfig.TLS
+                config.insecure = false
+            } else {
+                val queryParam = getQueryParam(uri)
 
-            getItemFormQuery(config, queryParam)
-            config.security = queryParam["security"] ?: AppConfig.TLS
+                getItemFormQuery(config, queryParam)
+                config.security = queryParam["security"] ?: AppConfig.TLS
+            }
+
+            return config
+        } catch (_: Exception) {
+            return null
         }
-
-        return config
     }
 
     /**

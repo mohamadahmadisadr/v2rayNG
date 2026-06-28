@@ -338,19 +338,26 @@ object Utils {
      * Decode a "encodeURIComponent" string.
      *
      * @param url The "encodeURIComponent" string.
-     * @return The decoded string, or the original string if decoding fails.
+     * @return The decoded string, or null if decoding fails.
      */
-    fun decodeURIComponent(url: String): String {
+    fun decodeURIComponent(url: String): String? {
         return try {
+            // Sanitize percent-encoding to prevent IllegalArgumentException on bad hex
+            val sanitized = sanitizePercentEncoding(url)
             // Decode strictly according to RFC 3986 / encodeURIComponent semantics.
             // '+' is a literal plus and MUST NOT be interpreted as space.
-            // Inputs using '+' for spaces are non-conforming and rejected deliberately
-            // to avoid cross-language interoperability issues.
-            URLDecoder.decode(url.replace("+", "%2B"), Charsets.UTF_8.toString())
+            URLDecoder.decode(sanitized.replace("+", "%2B"), Charsets.UTF_8.toString())
         } catch (e: Exception) {
-            LogUtil.e(AppConfig.TAG, "Failed to decode encodeURIComponent", e)
-            url
+            LogUtil.d(AppConfig.TAG, "Failed to decode encodeURIComponent: $url")
+            null
         }
+    }
+
+    /**
+     * Sanitize percent-encoding by escaping lone % signs not followed by 2 hex digits.
+     */
+    fun sanitizePercentEncoding(input: String): String {
+        return input.replace(Regex("%(?![0-9A-Fa-f]{2})"), "%25")
     }
 
     /**
@@ -623,5 +630,22 @@ object Utils {
     fun dp2px(context: Context, dp: Int): Int {
         val density = context.resources.displayMetrics.density
         return (dp * density + 0.5f).toInt()
+    }
+
+    /**
+     * Check if the current process is the main process.
+     */
+    fun isMainProcess(context: Context): Boolean {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val runningProcesses = am.runningAppProcesses
+        if (runningProcesses != null) {
+            val pid = android.os.Process.myPid()
+            for (processInfo in runningProcesses) {
+                if (processInfo.pid == pid) {
+                    return processInfo.processName == context.packageName
+                }
+            }
+        }
+        return true
     }
 }

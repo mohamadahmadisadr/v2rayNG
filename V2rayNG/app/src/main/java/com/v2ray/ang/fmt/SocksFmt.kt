@@ -21,15 +21,16 @@ object SocksFmt : FmtBase() {
         if (uri.idnHost.isEmpty()) return null
         if (uri.port <= 0) return null
 
-        config.remarks = Utils.decodeURIComponent(uri.fragment.orEmpty()).let { it.ifEmpty { "none" } }
+        config.remarks = Utils.decodeURIComponent(uri.fragment.orEmpty())?.let { it.ifEmpty { "none" } } ?: "none"
         config.server = uri.idnHost
         config.serverPort = uri.port.toString()
 
-        if (uri.userInfo?.isEmpty() == false) {
-            val result = if (uri.userInfo.contains(":")) {
-                uri.userInfo.split(":", limit = 2)
+        val userInfo = uri.userInfo.orEmpty()
+        if (userInfo.isNotEmpty()) {
+            val result = if (userInfo.contains(":")) {
+                userInfo.split(":", limit = 2)
             } else {
-                Utils.decode(uri.userInfo).split(":", limit = 2)
+                Utils.decode(userInfo).split(":", limit = 2)
             }
             if (result.count() == 2) {
                 config.username = result.first()

@@ -17,24 +17,28 @@ object WireguardFmt : FmtBase() {
      * @return the parsed ProfileItem object, or null if parsing fails
      */
     fun parse(str: String): ProfileItem? {
-        val config = ProfileItem.create(EConfigType.WIREGUARD)
+        try {
+            val config = ProfileItem.create(EConfigType.WIREGUARD)
 
-        val uri = URI(Utils.fixIllegalUrl(str))
-        if (uri.rawQuery.isNullOrEmpty()) return null
-        val queryParam = getQueryParam(uri)
+            val uri = URI(Utils.fixIllegalUrl(str))
+            if (uri.rawQuery.isNullOrEmpty()) return null
+            val queryParam = getQueryParam(uri)
 
-        config.remarks = Utils.decodeURIComponent(uri.fragment.orEmpty()).let { it.ifEmpty { "none" } }
-        config.server = uri.idnHost
-        config.serverPort = uri.port.toString()
+            config.remarks = Utils.decodeURIComponent(uri.fragment.orEmpty())?.let { it.ifEmpty { "none" } } ?: "none"
+            config.server = uri.idnHost
+            config.serverPort = uri.port.toString()
 
-        config.secretKey = uri.userInfo.orEmpty()
-        config.localAddress = queryParam["address"] ?: AppConfig.WIREGUARD_LOCAL_ADDRESS_V4
-        config.publicKey = queryParam["publickey"].orEmpty()
-        config.preSharedKey = queryParam["presharedkey"]?.nullIfBlank()
-        config.mtu = Utils.parseInt(queryParam["mtu"] ?: AppConfig.WIREGUARD_LOCAL_MTU)
-        config.reserved = queryParam["reserved"] ?: "0,0,0"
+            config.secretKey = uri.userInfo.orEmpty()
+            config.localAddress = queryParam["address"] ?: AppConfig.WIREGUARD_LOCAL_ADDRESS_V4
+            config.publicKey = queryParam["publickey"].orEmpty()
+            config.preSharedKey = queryParam["presharedkey"]?.nullIfBlank()
+            config.mtu = Utils.parseInt(queryParam["mtu"] ?: AppConfig.WIREGUARD_LOCAL_MTU)
+            config.reserved = queryParam["reserved"] ?: "0,0,0"
 
-        return config
+            return config
+        } catch (_: Exception) {
+            return null
+        }
     }
 
     /**
@@ -43,58 +47,62 @@ object WireguardFmt : FmtBase() {
      * @param str the Wireguard configuration file string to parse
      * @return the parsed ProfileItem object, or null if parsing fails
      */
-    fun parseWireguardConfFile(str: String): ProfileItem {
-        val config = ProfileItem.create(EConfigType.WIREGUARD)
+    fun parseWireguardConfFile(str: String): ProfileItem? {
+        try {
+            val config = ProfileItem.create(EConfigType.WIREGUARD)
 
-        val interfaceParams: MutableMap<String, String> = mutableMapOf()
-        val peerParams: MutableMap<String, String> = mutableMapOf()
+            val interfaceParams: MutableMap<String, String> = mutableMapOf()
+            val peerParams: MutableMap<String, String> = mutableMapOf()
 
-        var currentSection: String? = null
+            var currentSection: String? = null
 
-        str.lines().forEach { line ->
-            val trimmedLine = line.trim()
+            str.lines().forEach { line ->
+                val trimmedLine = line.trim()
 
-            if (trimmedLine.isEmpty() || trimmedLine.startsWith("#")) {
-                return@forEach
-            }
+                if (trimmedLine.isEmpty() || trimmedLine.startsWith("#")) {
+                    return@forEach
+                }
 
-            when {
-                trimmedLine.startsWith("[Interface]", ignoreCase = true) -> currentSection = "Interface"
-                trimmedLine.startsWith("[Peer]", ignoreCase = true) -> currentSection = "Peer"
-                else -> {
-                    if (currentSection != null) {
-                        val parts = trimmedLine.split("=", limit = 2).map { it.trim() }
-                        if (parts.size == 2) {
-                            val key = parts[0].lowercase()
-                            val value = parts[1]
-                            when (currentSection) {
-                                "Interface" -> interfaceParams[key] = value
-                                "Peer" -> peerParams[key] = value
+                when {
+                    trimmedLine.startsWith("[Interface]", ignoreCase = true) -> currentSection = "Interface"
+                    trimmedLine.startsWith("[Peer]", ignoreCase = true) -> currentSection = "Peer"
+                    else -> {
+                        if (currentSection != null) {
+                            val parts = trimmedLine.split("=", limit = 2).map { it.trim() }
+                            if (parts.size == 2) {
+                                val key = parts[0].lowercase()
+                                val value = parts[1]
+                                when (currentSection) {
+                                    "Interface" -> interfaceParams[key] = value
+                                    "Peer" -> peerParams[key] = value
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        config.secretKey = interfaceParams["privatekey"].orEmpty()
-        config.remarks = System.currentTimeMillis().toString()
-        config.localAddress = interfaceParams["address"] ?: AppConfig.WIREGUARD_LOCAL_ADDRESS_V4
-        config.mtu = Utils.parseInt(interfaceParams["mtu"] ?: AppConfig.WIREGUARD_LOCAL_MTU)
-        config.publicKey = peerParams["publickey"].orEmpty()
-        config.preSharedKey = peerParams["presharedkey"]?.nullIfBlank()
-        val endpoint = peerParams["endpoint"].orEmpty()
-        val endpointParts = endpoint.split(":", limit = 2)
-        if (endpointParts.size == 2) {
-            config.server = endpointParts[0]
-            config.serverPort = endpointParts[1]
-        } else {
-            config.server = endpoint
-            config.serverPort = ""
-        }
-        config.reserved = peerParams["reserved"] ?: "0,0,0"
+            config.secretKey = interfaceParams["privatekey"].orEmpty()
+            config.remarks = System.currentTimeMillis().toString()
+            config.localAddress = interfaceParams["address"] ?: AppConfig.WIREGUARD_LOCAL_ADDRESS_V4
+            config.mtu = Utils.parseInt(interfaceParams["mtu"] ?: AppConfig.WIREGUARD_LOCAL_MTU)
+            config.publicKey = peerParams["publickey"].orEmpty()
+            config.preSharedKey = peerParams["presharedkey"]?.nullIfBlank()
+            val endpoint = peerParams["endpoint"].orEmpty()
+            val endpointParts = endpoint.split(":", limit = 2)
+            if (endpointParts.size == 2) {
+                config.server = endpointParts[0]
+                config.serverPort = endpointParts[1]
+            } else {
+                config.server = endpoint
+                config.serverPort = ""
+            }
+            config.reserved = peerParams["reserved"] ?: "0,0,0"
 
-        return config
+            return config
+        } catch (_: Exception) {
+            return null
+        }
     }
 
 

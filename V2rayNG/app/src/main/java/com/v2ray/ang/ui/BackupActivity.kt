@@ -18,7 +18,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
-import com.tencent.mmkv.MMKV
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.AppConfig.WEBDAV_BACKUP_FILE_NAME
 import com.v2ray.ang.BuildConfig
@@ -102,7 +101,7 @@ class BackupActivity : HelperBaseActivity() {
         val backupDir = File(cacheDir, folderName).absolutePath
         val outputZipFilePath = File(cacheDir, "$folderName.zip").absolutePath
 
-        val count = MMKV.backupAllToDirectory(backupDir)
+        val count = MmkvManager.backupAll(backupDir)
         if (count <= 0) return Pair(false, "")
         return if (ZipUtil.zipFromFolder(backupDir, outputZipFilePath)) Pair(true, outputZipFilePath) else Pair(false, "")
     }
@@ -110,7 +109,7 @@ class BackupActivity : HelperBaseActivity() {
     private fun restoreConfiguration(zipFile: File): Boolean {
         val backupDir = File(cacheDir, System.currentTimeMillis().toString()).absolutePath
         if (!ZipUtil.unzipToFolder(zipFile, backupDir)) return false
-        val count = MMKV.restoreAllFromDirectory(backupDir)
+        val count = MmkvManager.restoreAll(backupDir)
         SettingsChangeManager.makeSetupGroupTab()
         SettingsChangeManager.makeRestartService()
         SettingsManager.initApp(this)

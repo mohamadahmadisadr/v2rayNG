@@ -119,7 +119,7 @@ class ServerProxyChainActivity : BaseActivity() {
         }
 
         MmkvManager.encodeServerConfig(editGuid, config)
-        if (isRunning) SettingsChangeManager.makeRestartService()
+        SettingsChangeManager.makeRestartService()
         toastSuccess(R.string.toast_success)
         finish()
     }

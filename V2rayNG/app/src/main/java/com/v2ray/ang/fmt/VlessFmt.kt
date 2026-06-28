@@ -1,12 +1,18 @@
 package com.v2ray.ang.fmt
 
+import android.text.TextUtils
 import com.v2ray.ang.AppConfig
+import com.v2ray.ang.dto.VmessQRCode
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.enums.EConfigType
+import com.v2ray.ang.enums.NetworkType
 import com.v2ray.ang.extension.idnHost
-import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.util.JsonUtil
+import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.Utils
 import java.net.URI
+import java.net.URISyntaxException
+import java.net.URLEncoder
 
 object VlessFmt : FmtBase() {
 
@@ -17,21 +23,131 @@ object VlessFmt : FmtBase() {
      * @return the parsed ProfileItem object, or null if parsing fails
      */
     fun parse(str: String): ProfileItem? {
-        val config = ProfileItem.create(EConfigType.VLESS)
+        var rawUrl = str.trim()
+        
+        // Pattern 2: JSON object as the entire authority
+        if (rawUrl.substringAfter("://").trimStart().startsWith("{")) {
+            return parseLegacyJsonFormat(rawUrl)
+        }
 
-        val uri = URI(Utils.fixIllegalUrl(str))
-        if (uri.rawQuery.isNullOrEmpty()) return null
-        val queryParam = getQueryParam(uri)
+        // Pattern 3: Strip trailing backtick and URL-encode userinfo
+        rawUrl = rawUrl.removeSuffix("`")
+        val schemeEnd = rawUrl.indexOf("://") + 3
+        val atIndex = rawUrl.indexOf("@", schemeEnd)
+        if (atIndex != -1) {
+            val userInfo = rawUrl.substring(schemeEnd, atIndex)
+            val encoded = URLEncoder.encode(userInfo, "UTF-8").replace("+", "%20")
+            rawUrl = rawUrl.substring(0, schemeEnd) + encoded + rawUrl.substring(atIndex)
+        }
 
-        config.remarks = Utils.decodeURIComponent(uri.fragment.orEmpty()).let { it.ifEmpty { "none" } }
-        config.server = uri.idnHost
-        config.serverPort = uri.port.toString()
-        config.password = uri.userInfo
-        config.method = queryParam["encryption"] ?: "none"
+        // Pattern 1: Unencoded JSON in query parameters
+        rawUrl = rawUrl.replace(Regex("extra=([^&]*)")) {
+            "extra=" + URLEncoder.encode(it.groupValues[1], "UTF-8")
+        }
+        // General fix for any param whose value starts with {
+        rawUrl = rawUrl.replace(Regex("=([{][^&]*)")) {
+            "=" + URLEncoder.encode(it.groupValues[1], "UTF-8")
+        }
 
-        getItemFormQuery(config, queryParam)
+        // Pattern 4: Emoji and non-ASCII in fragment
+        val fragmentIndex = rawUrl.indexOf("#")
+        if (fragmentIndex != -1) {
+            val fragment = rawUrl.substring(fragmentIndex + 1)
+            rawUrl = rawUrl.substring(0, fragmentIndex) + "#" + URLEncoder.encode(fragment, "UTF-8")
+        }
 
-        return config
+        try {
+            val config = ProfileItem.create(EConfigType.VLESS)
+            val uri = URI(Utils.fixIllegalUrl(rawUrl))
+            
+            val queryParam = getQueryParam(uri)
+
+            val rawEncryption = queryParam["encryption"] ?: "none"
+            val encryption = rawEncryption.substringBefore("@").trim()
+            if (encryption != "none" && encryption != "zero") {
+                LogUtil.d(AppConfig.TAG, "Skipping VLESS config: invalid encryption '$encryption'")
+                return null
+            }
+
+            config.remarks = Utils.decodeURIComponent(uri.fragment.orEmpty())?.let { it.ifEmpty { "none" } } ?: "none"
+            config.server = uri.idnHost
+            config.serverPort = uri.port.toString()
+            config.password = Utils.decodeURIComponent(uri.userInfo.orEmpty())?.trim() ?: return null
+            config.method = encryption
+
+            getItemFormQuery(config, queryParam)
+
+            val rawFlow = queryParam["flow"] ?: ""
+            config.flow = when {
+                rawFlow.isEmpty() || rawFlow == "none" -> ""
+                rawFlow.startsWith("xtls-rprx-vision-udp443") -> "xtls-rprx-vision-udp443"
+                rawFlow.startsWith("xtls-rprx-vision") -> "xtls-rprx-vision"
+                else -> "" // Default to empty instead of null to allow testing transport
+            }
+
+            if (config.security == AppConfig.REALITY) {
+                if (config.publicKey.isNullOrEmpty()) {
+                    LogUtil.d(AppConfig.TAG, "Skipping REALITY config: missing publicKey")
+                    return null
+                }
+            }
+
+            return config
+        } catch (_: URISyntaxException) {
+            LogUtil.d(AppConfig.TAG, "Vless parsing failed for malformed URI: $rawUrl")
+            return null
+        } catch (e: Exception) {
+            LogUtil.d(AppConfig.TAG, "Vless parsing failed: ${e.message}")
+            return null
+        }
+    }
+
+    /**
+     * Parses the legacy JSON share format for VLESS.
+     */
+    private fun parseLegacyJsonFormat(str: String): ProfileItem? {
+        try {
+            val jsonPart = str.substringAfter("://").substringBefore("#").trim()
+            val vlessJson = JsonUtil.fromJson(jsonPart, VmessQRCode::class.java) ?: return null
+            
+            if (TextUtils.isEmpty(vlessJson.add)
+                || TextUtils.isEmpty(vlessJson.port)
+                || TextUtils.isEmpty(vlessJson.id)
+            ) {
+                return null
+            }
+
+            val config = ProfileItem.create(EConfigType.VLESS)
+            config.remarks = vlessJson.ps.ifEmpty { str.substringAfter("#", "none") }
+            config.server = vlessJson.add
+            config.serverPort = vlessJson.port
+            config.password = vlessJson.id.trim()
+            config.method = if (TextUtils.isEmpty(vlessJson.scy)) "none" else vlessJson.scy
+            
+            config.network = vlessJson.net.ifEmpty { NetworkType.TCP.type }
+            config.headerType = vlessJson.type
+            config.host = vlessJson.host
+            config.path = vlessJson.path
+
+            when (NetworkType.fromString(config.network)) {
+                NetworkType.GRPC -> {
+                    config.serviceName = vlessJson.path
+                    config.authority = vlessJson.host
+                }
+                else -> {}
+            }
+
+            config.security = vlessJson.tls
+            config.sni = vlessJson.sni
+            config.fingerPrint = vlessJson.fp
+            config.alpn = vlessJson.alpn
+            config.insecure = vlessJson.insecure == "1"
+
+            return config
+        } catch (e: Exception) {
+            LogUtil.d(AppConfig.TAG, "Failed to parse legacy VLESS JSON format")
+            return null
+        }
     }
 
     /**

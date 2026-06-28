@@ -41,14 +41,14 @@ class ServerActivity : BaseActivity() {
         intent.getStringExtra("subscriptionId")
     }
 
-    private var profileState = mutableStateOf(ProfileItem.create(createConfigType))
+    private lateinit var profileState: MutableState<ProfileItem>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val config = MmkvManager.decodeServerConfig(editGuid) ?: ProfileItem.create(createConfigType)
         if (config.serverPort.isNullOrEmpty()) config.serverPort = DEFAULT_PORT.toString()
-        profileState.value = config
+        profileState = mutableStateOf(config, neverEqualPolicy())
 
         setContent {
             MaterialTheme {
@@ -218,9 +218,7 @@ class ServerActivity : BaseActivity() {
         }
         
         MmkvManager.encodeServerConfig(editGuid, config)
-        if (isRunning) {
-            SettingsChangeManager.makeRestartService()
-        }
+        SettingsChangeManager.makeRestartService()
         toastSuccess(R.string.toast_success)
         finish()
     }

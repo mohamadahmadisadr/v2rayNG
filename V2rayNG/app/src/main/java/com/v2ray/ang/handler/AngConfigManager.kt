@@ -6,6 +6,7 @@ import android.text.TextUtils
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreConfigManager
+import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.dto.SubscriptionUpdateResult
 import com.v2ray.ang.dto.UrlContentRequest
 import com.v2ray.ang.dto.entities.ProfileItem
@@ -466,7 +467,7 @@ object AngConfigManager {
      * @param subItem The subscription item.
      * @return The parsed ProfileItem or null if parsing fails or filtered out.
      */
-    private fun parseConfig(
+    fun parseConfig(
         str: String?,
         subid: String,
         subItem: SubscriptionItem?
@@ -553,21 +554,24 @@ object AngConfigManager {
             val proxyUsername = SettingsManager.getSocksUsername()
             val proxyPassword = SettingsManager.getSocksPassword()
 
-            var configText = try {
-                val httpPort = SettingsManager.getHttpPort()
-                HttpUtil.getUrlContentWithUserAgent(
-                    UrlContentRequest(
-                        url = url,
-                        userAgent = userAgent,
-                        timeout = 15000,
-                        httpPort = httpPort,
-                        proxyUsername = proxyUsername,
-                        proxyPassword = proxyPassword
+            var configText = ""
+            if (CoreServiceManager.isRunning()) {
+                configText = try {
+                    val httpPort = SettingsManager.getHttpPort()
+                    HttpUtil.getUrlContentWithUserAgent(
+                        UrlContentRequest(
+                            url = url,
+                            userAgent = userAgent,
+                            timeout = 10000,
+                            httpPort = httpPort,
+                            proxyUsername = proxyUsername,
+                            proxyPassword = proxyPassword
+                        )
                     )
-                )
-            } catch (e: Exception) {
-                LogUtil.e(AppConfig.ANG_PACKAGE, "Update subscription: proxy not ready or other error", e)
-                ""
+                } catch (e: Exception) {
+                    LogUtil.w(AppConfig.TAG, "Update subscription via proxy failed, falling back to direct: ${e.message}")
+                    ""
+                }
             }
             if (configText.isEmpty()) {
                 configText = try {

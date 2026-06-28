@@ -69,7 +69,8 @@ data class V2rayConfig(
         var settings: OutSettingsBean? = null,
         var streamSettings: StreamSettingsBean? = null,
         val sendThrough: String? = null,
-        var mux: MuxBean? = MuxBean(false)
+        var mux: MuxBean? = MuxBean(false),
+        var connectTimeout: Int? = null
     ) {
         data class OutSettingsBean(
             var vnext: List<VnextBean>? = null,
@@ -241,7 +242,7 @@ data class V2rayConfig(
             )
 
             data class TlsSettingsBean(
-                var allowInsecure: Boolean = false,
+                var allowInsecure: Boolean? = null,
                 var serverName: String? = null,
                 val alpn: List<String>? = null,
                 val minVersion: String? = null,

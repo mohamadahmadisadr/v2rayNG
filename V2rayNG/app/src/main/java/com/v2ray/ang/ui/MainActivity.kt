@@ -38,9 +38,11 @@ import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.AngConfigManager
+import com.v2ray.ang.handler.AutoBestConfigManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.handler.SpeedtestManager
 import com.v2ray.ang.handler.SubscriptionUpdater
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.Utils
@@ -48,6 +50,7 @@ import com.v2ray.ang.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -55,16 +58,27 @@ class MainActivity : HelperBaseActivity() {
     val mainViewModel: MainViewModel by viewModels()
     private val groupsState = MutableStateFlow<List<com.v2ray.ang.dto.GroupMapItem>>(emptyList())
 
+    private enum class PendingAction { NONE, START_V2RAY, START_AUTO_BEST }
+    private var pendingAction = PendingAction.NONE
+
     private val requestVpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (it.resultCode == RESULT_OK) {
-            startV2Ray()
+            when (pendingAction) {
+                PendingAction.START_V2RAY -> startV2Ray()
+                PendingAction.START_AUTO_BEST -> mainViewModel.startAutoBestConfig()
+                else -> {}
+            }
         } else {
             mainViewModel.setLoading(false)
         }
+        pendingAction = PendingAction.NONE
     }
     private val requestActivityLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (SettingsChangeManager.consumeRestartService() && mainViewModel.isRunning.value == true) {
-            restartV2Ray()
+        if (SettingsChangeManager.consumeRestartService()) {
+            mainViewModel.reloadServerList()
+            if (mainViewModel.isRunning.value == true) {
+                restartV2Ray()
+            }
         }
         if (SettingsChangeManager.consumeSetupGroupTab()) {
             setupGroupTab()
@@ -81,13 +95,11 @@ class MainActivity : HelperBaseActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
-                val groups by groupsState.collectAsStateWithLifecycle()
                 val isRunning by mainViewModel.isRunningFlow.collectAsStateWithLifecycle()
                 val qrGuid by qrCodeGuid
                 
                 MainScreen(
                     mainViewModel = mainViewModel,
-                    groups = groups,
                     isRunning = isRunning,
                     onFabClick = { handleFabAction() },
                     onMenuClick = { id -> handleMenuClick(id) },
@@ -133,7 +145,9 @@ class MainActivity : HelperBaseActivity() {
         SubscriptionUpdater.sync()
         mainViewModel.reloadServerList()
 
-        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_AUTO_PING_ON_START, true)) {
+        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_AUTO_BEST_CONFIG, true)) {
+            mainViewModel.startAutoBestConfig()
+        } else if (MmkvManager.decodeSettingsBool(AppConfig.PREF_AUTO_PING_ON_START, true)) {
             mainViewModel.testAllRealPing()
         }
 
@@ -141,6 +155,26 @@ class MainActivity : HelperBaseActivity() {
         }
         
         setupGroupTab()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Passive revalidation: Only check if connection is alive when user returns to app
+        if (mainViewModel.isRunning.value == true) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                val currentGuid = MmkvManager.getSelectServer()
+                val config = currentGuid?.let { MmkvManager.decodeServerConfig(it) }
+                if (config != null && config.server != null && config.serverPort != null) {
+                    val ok = SpeedtestManager.socketConnectTime(config.server!!, config.serverPort!!.toInt(), 2500) > 0
+                    if (!ok) {
+                        LogUtil.d(AppConfig.TAG, "Connection failed on resume, triggering auto-best")
+                        withContext(Dispatchers.Main) {
+                            mainViewModel.startAutoBestConfig()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun handleMenuClick(id: Int) {
@@ -163,6 +197,7 @@ class MainActivity : HelperBaseActivity() {
                 toast(getString(R.string.connection_test_testing_count, mainViewModel.serversCache.count()))
                 mainViewModel.testAllRealPing()
             }
+            R.id.auto_best_config -> mainViewModel.startAutoBestConfig()
             R.id.service_restart -> restartV2Ray()
             R.id.del_all_config -> delAllConfig()
             R.id.del_duplicate_config -> delDuplicateConfig()
@@ -190,6 +225,12 @@ class MainActivity : HelperBaseActivity() {
     private fun setupViewModel() {
         mainViewModel.isRunning.observe(this) { _ ->
             // isRunningFlow is used in Compose, no need to call applyRunningState
+        }
+        mainViewModel.updateGroupsAction.observe(this) {
+            setupGroupTab()
+        }
+        mainViewModel.startServiceAction.observe(this) {
+            startV2Ray()
         }
         mainViewModel.startListenBroadcast()
         mainViewModel.initAssets(assets)
@@ -300,6 +341,37 @@ class MainActivity : HelperBaseActivity() {
         refreshGroupTabTitles()
     }
 
+    private fun handleFabAction() {
+        if (mainViewModel.isRunning.value == true) {
+            CoreServiceManager.stopVService(this)
+        } else if (mainViewModel.isLoadingFlow.value == true) {
+            AutoBestConfigManager.stop()
+            mainViewModel.setLoading(false)
+        } else {
+            if (checkAndRequestVpnPermission(PendingAction.START_AUTO_BEST)) {
+                mainViewModel.startAutoBestConfig()
+            }
+        }
+    }
+
+    private fun checkAndRequestVpnPermission(action: PendingAction): Boolean {
+        if (!Utils.isMainProcess(this)) return false
+        return try {
+            val intent = VpnService.prepare(applicationContext)
+            if (intent != null) {
+                pendingAction = action
+                requestVpnPermission.launch(intent)
+                false
+            } else {
+                true
+            }
+        } catch (e: Exception) {
+            LogUtil.e(AppConfig.TAG, "VpnService.prepare failed", e)
+            toastError("System VPN error: ${e.message}")
+            false
+        }
+    }
+
     private fun setSelectServer(guid: String) {
         val selected = MmkvManager.getSelectServer()
         if (guid != selected) {
@@ -308,29 +380,12 @@ class MainActivity : HelperBaseActivity() {
 
             if (mainViewModel.isRunning.value == true) {
                 restartV2Ray()
-            }
-        }
-    }
-
-    private fun handleFabAction() {
-        if (mainViewModel.isRunning.value != true && MmkvManager.getSelectServer().isNullOrEmpty()) {
-            toast(R.string.title_file_chooser)
-            return
-        }
-
-        mainViewModel.setLoading(true)
-
-        if (mainViewModel.isRunning.value == true) {
-            CoreServiceManager.stopVService(this)
-        } else if (SettingsManager.isVpnMode()) {
-            val intent = VpnService.prepare(this)
-            if (intent == null) {
-                startV2Ray()
             } else {
-                requestVpnPermission.launch(intent)
+                AutoBestConfigManager.stop()
+                if (checkAndRequestVpnPermission(PendingAction.START_V2RAY)) {
+                    startV2Ray()
+                }
             }
-        } else {
-            startV2Ray()
         }
     }
 
@@ -339,7 +394,9 @@ class MainActivity : HelperBaseActivity() {
             toast(R.string.title_file_chooser)
             return
         }
-        CoreServiceManager.startVService(this)
+        if (checkAndRequestVpnPermission(PendingAction.START_V2RAY)) {
+            CoreServiceManager.startVService(this)
+        }
     }
 
     fun restartV2Ray() {
@@ -624,7 +681,22 @@ class MainActivity : HelperBaseActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    private fun onWinnerFound(winnerGuids: List<String>) {
+        lifecycleScope.launch {
+            try {
+                if (winnerGuids.isNotEmpty()) {
+                    setSelectServer(winnerGuids.first())
+                }
+            } catch (e: SecurityException) {
+                toastError("VPN permission error: ${e.message}")
+            } catch (e: Exception) {
+                toastError("Connection failed: ${e.message}")
+            }
+        }
+    }
+
     override fun onDestroy() {
+        AutoBestConfigManager.stop()
         super.onDestroy()
     }
 }
