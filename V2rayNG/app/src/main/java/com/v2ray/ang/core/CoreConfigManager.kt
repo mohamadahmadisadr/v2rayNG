@@ -88,7 +88,7 @@ object CoreConfigManager {
      *
      * The core flow is reused, then non-essential sections are removed.
      */
-    fun getV2rayConfig4Speedtest(context: Context, guid: String): ConfigResult {
+    fun getV2rayConfig4Speedtest(context: Context, guid: String, portOverride: Int = 0): ConfigResult {
         try {
             val configContext = CoreConfigContextBuilder.build(context, guid)
                 ?: return ConfigResult(status = false, guid = guid, errorMessage = "Failed to build config context")
@@ -96,6 +96,9 @@ object CoreConfigManager {
                 return buildV2rayCustomConfig(configContext)
             }
             val v2rayConfig = buildUnifiedConfig(configContext)
+            if (portOverride > 0 && v2rayConfig.inbounds.isNotEmpty()) {
+                v2rayConfig.inbounds[0].port = portOverride
+            }
             postProcessForSpeedtest(v2rayConfig)
 
             return toConfigResult(configContext, v2rayConfig)
@@ -427,7 +430,11 @@ object CoreConfigManager {
      */
     private fun postProcessForSpeedtest(v2rayConfig: V2rayConfig) {
         v2rayConfig.log.loglevel = MmkvManager.decodeSettingsString(AppConfig.PREF_LOGLEVEL) ?: "warning"
-        v2rayConfig.inbounds.clear()
+        if (v2rayConfig.inbounds.size > 1) {
+            val firstInbound = v2rayConfig.inbounds[0]
+            v2rayConfig.inbounds.clear()
+            v2rayConfig.inbounds.add(firstInbound)
+        }
         v2rayConfig.routing.rules.clear()
         v2rayConfig.dns = null
         v2rayConfig.fakedns = null

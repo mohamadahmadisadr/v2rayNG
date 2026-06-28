@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 object AutoBestConfigManager {
 
-    private var testingScope: CoroutineScope? = null
+    private var testingJob: Job? = null
     private const val TARGET_COUNT = 3
     private val SUB_ID = AppConfig.AUTO_BEST_SUBSCRIPTION_ID
 
@@ -65,10 +65,15 @@ object AutoBestConfigManager {
         onProgress: (String) -> Unit,
         onComplete: (List<String>) -> Unit
     ) {
-        testingScope?.cancel()
-        testingScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        
-        testingScope?.launch {
+        // Prune stale TCP cache entries before each run
+        val pruneNow = System.currentTimeMillis()
+        tcpCache.entries.removeIf { pruneNow - it.value.second > CACHE_EXPIRY_MS }
+        if (tcpCache.size > 10000) {
+            tcpCache.clear()
+        }
+
+        testingJob?.cancel()
+        testingJob = CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             val stats = ParseStats()
             try {
                 // STARTUP LOGIC: Check last working config
@@ -95,7 +100,7 @@ object AutoBestConfigManager {
                             onComplete(listOf(guid))
                         }
                         // stop discovery loop
-                        testingScope?.cancel()
+                        testingJob?.cancel()
                         return@launch
                     } else {
                         lastWorking.failCount++
@@ -376,7 +381,8 @@ object AutoBestConfigManager {
     }
 
     fun stop() {
-        testingScope?.cancel()
+        testingJob?.cancel()
+        testingJob = null
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 CoreNativeManager.stopTestControllers()

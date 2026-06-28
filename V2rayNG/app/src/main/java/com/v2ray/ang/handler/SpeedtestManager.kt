@@ -22,13 +22,10 @@ import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
 object SpeedtestManager {
-    private val pingMutex = Mutex()
 
     /**
      * Measures the time taken to establish a TCP connection to a given URL and port.
@@ -125,7 +122,7 @@ object SpeedtestManager {
         }
     }
 
-    suspend fun startRealPing(context: Context, profileItem: ProfileItem): Long = pingMutex.withLock {
+    suspend fun startRealPing(context: Context, profileItem: ProfileItem, workerId: Int = 0): Long {
         val retFailure = -1L
 
         if (!profileItem.configType.isComplexType()
@@ -141,35 +138,35 @@ object SpeedtestManager {
             }
         }
 
-        val configResult = CoreConfigManager.getV2rayConfig4Speedtest(context, profileItem)
+        val configResult = CoreConfigManager.getV2rayConfig4Speedtest(context, profileItem, 10900 + workerId)
         if (!configResult.status) {
             return retFailure
         }
         
         val url1 = SettingsManager.getDelayTestUrl()
-        var delay = CoreNativeManager.measureOutboundDelay(configResult.content, url1)
+        var delay = CoreNativeManager.measureOutboundDelay(configResult.content, url1, workerId)
         if (delay <= 0) {
             val url2 = if (url1 == AppConfig.DELAY_TEST_URL) AppConfig.DELAY_TEST_URL2 else AppConfig.DELAY_TEST_URL
-            delay = CoreNativeManager.measureOutboundDelay(configResult.content, url2)
+            delay = CoreNativeManager.measureOutboundDelay(configResult.content, url2, workerId)
         }
         if (delay <= 0) {
-            delay = CoreNativeManager.measureOutboundDelay(configResult.content, AppConfig.DELAY_TEST_URL3)
+            delay = CoreNativeManager.measureOutboundDelay(configResult.content, AppConfig.DELAY_TEST_URL3, workerId)
         }
         return delay
     }
 
-    suspend fun startRealPingWithUrl(context: Context, profileItem: ProfileItem, testUrl: String, timeoutMs: Int): Long = pingMutex.withLock {
+    suspend fun startRealPingWithUrl(context: Context, profileItem: ProfileItem, testUrl: String, timeoutMs: Int, workerId: Int = 0): Long {
         val retFailure = -1L
 
-        val configResult = CoreConfigManager.getV2rayConfig4Speedtest(context, profileItem)
+        val configResult = CoreConfigManager.getV2rayConfig4Speedtest(context, profileItem, 10900 + workerId)
         if (!configResult.status) {
             return retFailure
         }
         
-        return CoreNativeManager.measureOutboundDelay(configResult.content, testUrl)
+        return CoreNativeManager.measureOutboundDelay(configResult.content, testUrl, workerId)
     }
 
-    suspend fun startRealPing(context: Context, guid: String): Long = pingMutex.withLock {
+    suspend fun startRealPing(context: Context, guid: String, workerId: Int = 0): Long {
         val retFailure = -1L
 
         val config = MmkvManager.decodeServerConfig(guid) ?: return retFailure
@@ -186,18 +183,18 @@ object SpeedtestManager {
             }
         }
 
-        val configResult = CoreConfigManager.getV2rayConfig4Speedtest(context, guid)
+        val configResult = CoreConfigManager.getV2rayConfig4Speedtest(context, guid, 10900 + workerId)
         if (!configResult.status) {
             return retFailure
         }
         val url1 = SettingsManager.getDelayTestUrl()
-        var delay = CoreNativeManager.measureOutboundDelay(configResult.content, url1)
+        var delay = CoreNativeManager.measureOutboundDelay(configResult.content, url1, workerId)
         if (delay <= 0) {
             val url2 = if (url1 == AppConfig.DELAY_TEST_URL) AppConfig.DELAY_TEST_URL2 else AppConfig.DELAY_TEST_URL
-            delay = CoreNativeManager.measureOutboundDelay(configResult.content, url2)
+            delay = CoreNativeManager.measureOutboundDelay(configResult.content, url2, workerId)
         }
         if (delay <= 0) {
-            delay = CoreNativeManager.measureOutboundDelay(configResult.content, AppConfig.DELAY_TEST_URL3)
+            delay = CoreNativeManager.measureOutboundDelay(configResult.content, AppConfig.DELAY_TEST_URL3, workerId)
         }
         return delay
     }

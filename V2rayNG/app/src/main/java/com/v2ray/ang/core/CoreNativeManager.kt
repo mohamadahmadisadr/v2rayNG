@@ -96,19 +96,20 @@ object CoreNativeManager {
         }
     }
 
-    private val testControllers = arrayOfNulls<CoreController>(3)
-    private val testControllerMutexes = Array(3) { Mutex() }
+    private const val MAX_TEST_CONTROLLERS = 64
+    private val testControllers = arrayOfNulls<CoreController>(MAX_TEST_CONTROLLERS)
+    private val testControllerMutexes = Array(MAX_TEST_CONTROLLERS) { Mutex() }
     
     // Allow concurrent core operations up to the number of controllers
-    private val coreOperationSemaphore = Semaphore(3)
+    private val coreOperationSemaphore = Semaphore(MAX_TEST_CONTROLLERS)
 
     /**
      * Measure outbound connection delay using a robust manual lifecycle.
-     * uses a pool of 3 persistent controllers.
+     * uses a pool of persistent controllers.
      */
     suspend fun measureOutboundDelay(config: String, testUrl: String, workerId: Int = 0): Long {
         if (config.isBlank()) return -1L
-        val id = workerId % 3
+        val id = workerId % MAX_TEST_CONTROLLERS
         
         return testControllerMutexes[id].withLock {
             var controller = testControllers[id]
@@ -216,7 +217,7 @@ object CoreNativeManager {
      * Stop all test controllers when the discovery session is finished.
      */
     suspend fun stopTestControllers() {
-        for (i in 0..2) {
+        for (i in 0 until MAX_TEST_CONTROLLERS) {
             testControllerMutexes[i].withLock {
                 coreOperationSemaphore.withPermit {
                     testControllers[i]?.let {

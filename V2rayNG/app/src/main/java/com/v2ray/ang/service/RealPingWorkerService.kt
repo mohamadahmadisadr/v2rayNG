@@ -38,12 +38,14 @@ class RealPingWorkerService(
     private val totalCount = AtomicInteger(0)
 
     fun start() {
-        val jobs = guids.map { guid ->
+        // Max safe concurrency is 89 to avoid port range overlap with AutoBestConfigManager (10810+)
+        val jobs = guids.mapIndexed { index, guid ->
             totalCount.incrementAndGet()
             scope.launch {
                 runningCount.incrementAndGet()
                 try {
-                    val result = SpeedtestManager.startRealPing(context, guid)
+                    val workerId = index % concurrency
+                    val result = SpeedtestManager.startRealPing(context, guid, workerId)
                     onEvent(RealPingEvent.Result(guid, result))
                 } catch (_: Throwable) {
                     // ignore
