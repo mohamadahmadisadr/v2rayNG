@@ -7,8 +7,11 @@ import com.google.gson.JsonParser
 import com.google.gson.JsonPrimitive
 import com.google.gson.JsonSerializationContext
 import com.google.gson.JsonSerializer
+import com.google.gson.Strictness
 import com.google.gson.reflect.TypeToken
+import com.google.gson.stream.JsonReader
 import com.v2ray.ang.AppConfig
+import java.io.StringReader
 import java.lang.reflect.Type
 
 object JsonUtil {
@@ -78,18 +81,27 @@ object JsonUtil {
 
     /**
      * Parses a JSON string into a JsonObject.
-     *
-     * @param src The JSON string to parse.
      * @return The parsed JsonObject, or null if parsing fails.
      */
     fun parseString(src: String?): JsonObject? {
-        if (src == null)
+        if (src.isNullOrBlank())
             return null
+        
+        // Attempt 1: Strict parse (fastest, handles well-formed JSON)
         try {
             return JsonParser.parseString(src).getAsJsonObject()
+        } catch (_: Exception) {
+            // fall through to lenient attempt
+        }
+
+        // Attempt 2: Lenient parse (handles trailing commas, unquoted keys, etc.)
+        return try {
+            val reader = JsonReader(StringReader(src))
+            reader.setStrictness(Strictness.LENIENT)
+            JsonParser.parseReader(reader).asJsonObject
         } catch (e: Exception) {
-            LogUtil.e(AppConfig.TAG, "Failed to parse JSON string", e)
-            return null
+            LogUtil.d(AppConfig.TAG, "Failed to parse JSON string (both strict and lenient): ${e.message}")
+            null
         }
     }
 }

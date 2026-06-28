@@ -2,9 +2,6 @@ package com.v2ray.ang.core
 
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import com.google.gson.JsonParser
-import com.google.gson.stream.JsonReader
-import java.io.StringReader
 import java.net.URLDecoder
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.dto.V2rayConfig.OutboundBean
@@ -444,18 +441,7 @@ object CoreOutboundBuilder {
                     } else s
                 }
                 
-                xhttpSetting.extra = if (extraJson != null) {
-                    try {
-                        JsonUtil.parseString(extraJson)
-                    } catch (_: Exception) {
-                        runCatching {
-                            val reader = JsonReader(StringReader(extraJson))
-                            @Suppress("DEPRECATION")
-                            reader.isLenient = true
-                            JsonParser.parseReader(reader).asJsonObject
-                        }.getOrNull()
-                    }
-                } else null
+                xhttpSetting.extra = extraJson?.let { JsonUtil.parseString(it) }
 
                 streamSettings.xhttpSettings = xhttpSetting
             }
@@ -554,7 +540,7 @@ object CoreOutboundBuilder {
             if (parsedFinalMask != null) {
                 streamSettings.finalmask = parsedFinalMask
             } else {
-                LogUtil.w("V2rayConfigManager", "Invalid finalMask JSON, keeping previously generated finalmask")
+                LogUtil.d(AppConfig.TAG, "Invalid finalMask JSON, keeping previously generated finalmask")
             }
         }
         return sni

@@ -252,8 +252,13 @@ object AutoBestConfigManager {
                                 profile.insecure = true
                                 if (profile.fingerPrint.isNullOrBlank()) profile.fingerPrint = "chrome"
 
+                                val configResult = CoreConfigManager.getV2rayConfig4Speedtest(context, profile, 10810 + workerId)
+                                if (!configResult.status) {
+                                    continue
+                                }
+
                                 val delay = CoreNativeManager.measureOutboundDelay(
-                                    CoreConfigManager.getV2rayConfig4Speedtest(context, profile, 10810 + workerId).content,
+                                    configResult.content,
                                     "http://cp.cloudflare.com/generate_204",
                                     workerId
                                 )
