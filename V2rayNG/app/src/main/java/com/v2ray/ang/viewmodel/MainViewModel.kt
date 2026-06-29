@@ -76,6 +76,9 @@ class MainViewModel @Inject constructor(
     private val _startServiceAction = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val startServiceAction: SharedFlow<Unit> = _startServiceAction.asSharedFlow()
 
+    private val _applyBestConfigAction = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val applyBestConfigAction: SharedFlow<Unit> = _applyBestConfigAction.asSharedFlow()
+
     private val _isLoadingFlow = MutableStateFlow(false)
     val isLoadingFlow = _isLoadingFlow.asStateFlow()
 
@@ -109,6 +112,7 @@ class MainViewModel @Inject constructor(
                 _isLoadingFlow.value = false
                 _autoBestProgressFlow.value = ""
                 
+                val previousGuid = mmkvManager.getSelectServer()
                 // 1. Select the best one in MMKV first
                 mmkvManager.setSelectServer(bestGuids.first())
                 
@@ -116,7 +120,9 @@ class MainViewModel @Inject constructor(
                 reloadServerList {
                     _updateGroupsAction.tryEmit(Unit)
                     updateSelectedGuid()
-                    _startServiceAction.tryEmit(Unit)
+                    if (bestGuids.first() != previousGuid || !_isRunningFlow.value) {
+                        _applyBestConfigAction.tryEmit(Unit)
+                    }
                 }
             }
         )

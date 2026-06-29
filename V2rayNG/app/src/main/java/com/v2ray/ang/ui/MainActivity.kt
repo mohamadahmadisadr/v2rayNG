@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.net.VpnService
 import android.os.Bundle
+import android.os.Process
 import android.view.KeyEvent
 import android.view.Menu
 import android.view.View
@@ -251,6 +252,17 @@ class MainActivity : HelperBaseActivity() {
                 }
             }
         }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                mainViewModel.applyBestConfigAction.collect {
+                    if (mainViewModel.isRunningFlow.value) {
+                        restartV2Ray()
+                    } else {
+                        startV2Ray()
+                    }
+                }
+            }
+        }
         mainViewModel.startListenBroadcast()
         mainViewModel.initAssets(assets)
     }
@@ -375,8 +387,30 @@ class MainActivity : HelperBaseActivity() {
 
     private fun checkAndRequestVpnPermission(action: PendingAction): Boolean {
         if (!Utils.isMainProcess(this)) return false
+
+        // Guard: verify this process's UID matches the package's registered UID.
+        // If they differ, we are a stale process from before a reinstall.
+        // VpnService.prepare() would throw SecurityException from system_server.
+        try {
+            val packageUid = packageManager.getPackageUid(packageName, 0)
+            val processUid = Process.myUid()
+            if (processUid != packageUid) {
+                LogUtil.e(
+                    AppConfig.TAG,
+                    "VPN prepare skipped: stale process uid=$processUid, package uid=$packageUid"
+                )
+                // The process should have been killed in AngApplication; if we're here,
+                // finish() and let the system restart with the correct process.
+                finish()
+                return false
+            }
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "Could not verify process UID: ${e.message}")
+            // Cannot verify — proceed and let prepare() catch any error
+        }
+
         return try {
-            val intent = VpnService.prepare(applicationContext)
+            val intent = VpnService.prepare(this)
             if (intent != null) {
                 pendingAction = action
                 requestVpnPermission.launch(intent)

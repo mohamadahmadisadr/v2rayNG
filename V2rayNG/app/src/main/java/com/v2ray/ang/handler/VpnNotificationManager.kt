@@ -27,7 +27,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.min
 
-object NotificationManager {
+object VpnNotificationManager {
     private const val NOTIFICATION_ID = 1
     private const val NOTIFICATION_PENDING_INTENT_CONTENT = 0
     private const val NOTIFICATION_PENDING_INTENT_STOP_V2RAY = 1

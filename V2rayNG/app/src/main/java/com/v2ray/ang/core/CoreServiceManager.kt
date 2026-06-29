@@ -20,7 +20,7 @@ import com.v2ray.ang.extension.isComplexType
 import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.handler.MmkvManager
-import com.v2ray.ang.handler.NotificationManager
+import com.v2ray.ang.handler.VpnNotificationManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SpeedtestManager
 import com.v2ray.ang.service.CoreProxyOnlyService
@@ -221,7 +221,7 @@ object CoreServiceManager {
                 val message = e.message?.takeUnless { it.isBlank() } ?: e.javaClass.simpleName
                 LogUtil.e(AppConfig.TAG, "StartCore-Manager: $message", e)
                 MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_FAILURE, message)
-                NotificationManager.cancelNotification()
+                VpnNotificationManager.cancelNotification()
                 serviceControl?.get()?.stopService()
             }
         }
@@ -257,7 +257,7 @@ object CoreServiceManager {
             tunFd = 0
         }
 
-        NotificationManager.showNotification(currentConfig)
+        VpnNotificationManager.showNotification(currentConfig)
         CoreNativeManager.reconcileBrowserDialer(dialerAddr)
         coreController.startLoop(result.content, tunFd)
 
@@ -278,7 +278,7 @@ object CoreServiceManager {
         }
 
         MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_SUCCESS, "")
-        NotificationManager.startSpeedNotification()
+        VpnNotificationManager.startSpeedNotification()
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Core started successfully")
     }
 
@@ -308,7 +308,7 @@ object CoreServiceManager {
         }
 
         MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_STOP_SUCCESS, "")
-        NotificationManager.cancelNotification()
+        VpnNotificationManager.cancelNotification()
 
         try {
             service.unregisterReceiver(mMsgReceive)
@@ -529,12 +529,12 @@ object CoreServiceManager {
             when (intent?.action) {
                 Intent.ACTION_SCREEN_OFF -> {
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: Screen off")
-                    NotificationManager.stopSpeedNotification()
+                    VpnNotificationManager.stopSpeedNotification()
                 }
 
                 Intent.ACTION_SCREEN_ON -> {
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: Screen on")
-                    NotificationManager.startSpeedNotification()
+                    VpnNotificationManager.startSpeedNotification()
                 }
             }
         }

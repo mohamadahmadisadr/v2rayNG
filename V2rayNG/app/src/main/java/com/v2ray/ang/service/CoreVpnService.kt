@@ -22,7 +22,7 @@ import com.v2ray.ang.contracts.ServiceControl
 import com.v2ray.ang.contracts.Tun2SocksControl
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.handler.MmkvManager
-import com.v2ray.ang.handler.NotificationManager
+import com.v2ray.ang.handler.VpnNotificationManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.MyContextWrapper
@@ -116,13 +116,13 @@ class CoreVpnService : VpnService(), ServiceControl {
             }
         }
 
-        NotificationManager.cancelNotification()
+        VpnNotificationManager.cancelNotification()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         LogUtil.i(AppConfig.TAG, "StartCore-VPN: Service command received")
         
-        NotificationManager.showNotification(null)
+        VpnNotificationManager.showNotification(null)
 
         try {
             setupVpnService()

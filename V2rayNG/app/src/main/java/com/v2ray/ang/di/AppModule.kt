@@ -1,7 +1,5 @@
 package com.v2ray.ang.di
 
-import android.app.Application
-import android.content.Context
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.handler.*
 import dagger.Module
@@ -14,9 +12,6 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object AppModule {
 
-    @Provides
-    @Singleton
-    fun provideContext(application: Application): Context = application.applicationContext
 
     @Provides
     @Singleton
@@ -36,7 +31,7 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideNotificationManager(): NotificationManager = NotificationManager
+    fun provideVpnNotificationManager(): VpnNotificationManager = VpnNotificationManager
 
     @Provides
     @Singleton

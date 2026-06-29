@@ -1,6 +1,7 @@
 package com.v2ray.ang
 
 import android.content.Context
+import android.os.Process
 import androidx.multidex.MultiDexApplication
 import androidx.work.Configuration
 import androidx.work.WorkManager
@@ -12,6 +13,7 @@ import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.util.LogUtil
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
+import kotlin.system.exitProcess
 
 @HiltAndroidApp
 class AngApplication : MultiDexApplication(), Configuration.Provider {
@@ -40,10 +42,10 @@ class AngApplication : MultiDexApplication(), Configuration.Provider {
      * Initializes the application.
      */
     override fun onCreate() {
+        killIfStaleProcess()
         super.onCreate()
 
         MMKV.initialize(this)
-        clearStaleUidCache()
         
         // Ensure native library is loaded early and only once
         com.v2ray.ang.core.CoreNativeManager.ensureLibraryLoaded()
@@ -62,19 +64,30 @@ class AngApplication : MultiDexApplication(), Configuration.Provider {
             .apply()
     }
 
-    private fun clearStaleUidCache() {
+    private fun killIfStaleProcess() {
         try {
-            val currentUid = packageManager.getPackageUid(packageName, 0)
-            val cachedUid = MmkvManager.decodeSettingsInt("app_uid", -1)
-            if (cachedUid != -1 && cachedUid != currentUid) {
-                // UID changed (reinstall) — clear ALL cached state
-                MmkvManager.removeSettings("app_uid")
-                MmkvManager.removeSettings("vpn_prepared")
-                MmkvManager.removeSettings(AppConfig.PREF_LAST_WORKING_CONFIG)
-                LogUtil.w(AppConfig.TAG, "UID changed from $cachedUid to $currentUid, cleared cache")
+            val packageUid = packageManager.getPackageUid(packageName, 0)
+            val processUid = Process.myUid()
+
+            if (processUid != packageUid) {
+                // This process belongs to a stale installation (old UID).
+                // Any Binder calls it makes (e.g. VpnService.prepare) will fail with
+                // SecurityException because system_server will reject them.
+                // Kill immediately before reaching any UI or service code.
+                LogUtil.w(
+                    AppConfig.TAG,
+                    "Stale process detected: process uid=$processUid, package uid=$packageUid. Killing."
+                )
+                Process.killProcess(Process.myPid())
+                // killProcess is asynchronous on some APIs; also call exitProcess as backup
+                exitProcess(0)
             }
-            MmkvManager.encodeSettings("app_uid", currentUid)
+
+            // Process uid matches — store it for diagnostic use
+            MmkvManager.encodeSettings("app_uid", packageUid)
+
         } catch (_: Exception) {
+            // PackageManager unavailable — cannot verify; proceed normally
         }
     }
 }

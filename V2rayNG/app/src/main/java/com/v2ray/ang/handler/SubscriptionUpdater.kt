@@ -10,6 +10,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkerParameters
 import androidx.work.multiprocess.RemoteWorkManager
 import androidx.work.workDataOf
+import androidx.hilt.work.HiltWorker
 import com.v2ray.ang.AngApplication
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
@@ -17,6 +18,8 @@ import com.v2ray.ang.dto.entities.SubscriptionCache
 import com.v2ray.ang.enums.NotificationChannelType
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.NotificationHelper
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
 import java.util.concurrent.TimeUnit
 
 object SubscriptionUpdater {
@@ -147,8 +150,13 @@ object SubscriptionUpdater {
     // Worker
     // -------------------------------------------------------------------------
 
-    class UpdateTask(context: Context, params: WorkerParameters) :
-        CoroutineWorker(context, params) {
+    @HiltWorker
+    class UpdateTask @AssistedInject constructor(
+        @Assisted context: Context,
+        @Assisted params: WorkerParameters,
+        private val mmkvManager: MmkvManager,
+        private val angConfigManager: AngConfigManager
+    ) : CoroutineWorker(context, params) {
 
         @SuppressLint("MissingPermission")
         override suspend fun doWork(): Result {
@@ -160,7 +168,7 @@ object SubscriptionUpdater {
                 return Result.success()
             }
 
-            val subItem = MmkvManager.decodeSubscription(subId)
+            val subItem = mmkvManager.decodeSubscription(subId)
             if (subItem == null) {
                 LogUtil.w(AppConfig.TAG, "SubscriptionUpdater: no subscription found for $subId")
                 return Result.success()
@@ -182,7 +190,7 @@ object SubscriptionUpdater {
             )
 
             LogUtil.i(AppConfig.TAG, "SubscriptionUpdater automatic update: ---${sub.subscription.remarks}")
-            AngConfigManager.updateConfigViaSub(sub)
+            angConfigManager.updateConfigViaSub(sub)
 
             // Clear notification
             NotificationHelper.cancel(NotificationChannelType.SUBSCRIPTION_UPDATE, applicationContext)
