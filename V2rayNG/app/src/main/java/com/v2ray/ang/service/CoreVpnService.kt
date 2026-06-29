@@ -28,10 +28,17 @@ import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.MyContextWrapper
 import com.v2ray.ang.util.Utils
 import hev.htproxy.TProxyService
+import dagger.hilt.android.AndroidEntryPoint
 import java.lang.ref.SoftReference
+import javax.inject.Inject
 
 @SuppressLint("VpnServicePolicy")
+@AndroidEntryPoint
 class CoreVpnService : VpnService(), ServiceControl {
+    @Inject lateinit var mmkvManager: MmkvManager
+    @Inject lateinit var settingsManager: SettingsManager
+    @Inject lateinit var coreServiceManager: CoreServiceManager
+
     private lateinit var mInterface: ParcelFileDescriptor
     private var isRunning = false
     private var tun2SocksService: Tun2SocksControl? = null
@@ -78,7 +85,7 @@ class CoreVpnService : VpnService(), ServiceControl {
         LogUtil.i(AppConfig.TAG, "StartCore-VPN: Service created")
         val policy = StrictMode.ThreadPolicy.Builder().permitAll().build()
         StrictMode.setThreadPolicy(policy)
-        CoreServiceManager.serviceControl = SoftReference(this)
+        coreServiceManager.serviceControl = SoftReference(this)
     }
 
     override fun onRevoke() {
@@ -137,7 +144,7 @@ class CoreVpnService : VpnService(), ServiceControl {
             LogUtil.e(AppConfig.TAG, "StartCore-VPN: Interface not initialized")
             return
         }
-        if (!CoreServiceManager.startCoreLoop(mInterface)) {
+        if (!coreServiceManager.startCoreLoop(mInterface)) {
             LogUtil.e(AppConfig.TAG, "StartCore-VPN: Failed to start core loop")
             stopAllService()
             return
@@ -217,11 +224,12 @@ class CoreVpnService : VpnService(), ServiceControl {
      * @param builder The VPN Builder to configure
      */
     private fun configureNetworkSettings(builder: Builder) {
-        val vpnConfig = SettingsManager.getCurrentVpnInterfaceAddressConfig()
-        val bypassLan = SettingsManager.routingRulesetsBypassLan()
+        val vpnConfig = settingsManager.getCurrentVpnInterfaceAddressConfig()
+        val bypassLan = settingsManager.routingRulesetsBypassLan()
 
         // Configure IPv4 settings
-        builder.setMtu(SettingsManager.getVpnMtu())
+        val preferredMtu = getOptimalMtuFromActiveNetwork()
+        builder.setMtu(preferredMtu)
         builder.addAddress(vpnConfig.ipv4Client, 30)
 
         // Configure routing rules
@@ -235,7 +243,7 @@ class CoreVpnService : VpnService(), ServiceControl {
         }
 
         // Configure IPv6 if enabled
-        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_IPV6_ENABLED) == true) {
+        if (mmkvManager.decodeSettingsBool(AppConfig.PREF_IPV6_ENABLED) == true) {
             builder.addAddress(vpnConfig.ipv6Client, 126)
             if (bypassLan) {
                 builder.addRoute("2000::", 3) // Currently only 1/8 of total IPv6 is in use
@@ -249,7 +257,7 @@ class CoreVpnService : VpnService(), ServiceControl {
         //if (MmkvManager.decodeSettingsBool(AppConfig.PREF_LOCAL_DNS_ENABLED) == true) {
         //  builder.addDnsServer(PRIVATE_VLAN4_ROUTER)
         //} else {
-        SettingsManager.getVpnDnsServers().forEach {
+        settingsManager.getVpnDnsServers().forEach {
             if (Utils.isPureIpAddress(it)) {
                 builder.addDnsServer(it)
             }
@@ -276,8 +284,8 @@ class CoreVpnService : VpnService(), ServiceControl {
         // Android Q (API 29) and above: Configure metering and HTTP proxy
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             builder.setMetered(false)
-            if (MmkvManager.decodeSettingsBool(AppConfig.PREF_APPEND_HTTP_PROXY)) {
-                builder.setHttpProxy(ProxyInfo.buildDirectProxy(LOOPBACK, SettingsManager.getHttpPort()))
+            if (mmkvManager.decodeSettingsBool(AppConfig.PREF_APPEND_HTTP_PROXY)) {
+                builder.setHttpProxy(ProxyInfo.buildDirectProxy(LOOPBACK, settingsManager.getHttpPort()))
             }
         }
     }
@@ -296,19 +304,19 @@ class CoreVpnService : VpnService(), ServiceControl {
         val selfPackageName = BuildConfig.APPLICATION_ID
 
         // If per-app proxy is not enabled, disallow the VPN service's own package and return
-        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY) == false) {
+        if (mmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY) == false) {
             builder.addDisallowedApplication(selfPackageName)
             return
         }
 
         // If no apps are selected, disallow the VPN service's own package and return
-        val apps = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET)
+        val apps = mmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET)
         if (apps.isNullOrEmpty()) {
             builder.addDisallowedApplication(selfPackageName)
             return
         }
 
-        val bypassApps = MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS)
+        val bypassApps = mmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS)
         // Handle the VPN service's own package according to the mode
         if (bypassApps) apps.add(selfPackageName) else apps.remove(selfPackageName)
 
@@ -332,7 +340,7 @@ class CoreVpnService : VpnService(), ServiceControl {
      * Starts the tun2socks process with the appropriate parameters.
      */
     private fun runTun2socks() {
-        if (SettingsManager.isUsingHevTun()) {
+        if (settingsManager.isUsingHevTun()) {
             tun2SocksService = TProxyService(
                 context = applicationContext,
                 vpnInterface = mInterface,
@@ -344,6 +352,17 @@ class CoreVpnService : VpnService(), ServiceControl {
         }
 
         tun2SocksService?.startTun2Socks()
+    }
+
+    private fun getOptimalMtuFromActiveNetwork(): Int {
+        val activeNetwork = connectivity.activeNetwork ?: return settingsManager.getVpnMtu()
+        val caps = connectivity.getNetworkCapabilities(activeNetwork) ?: return settingsManager.getVpnMtu()
+        
+        return if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
+            1420
+        } else {
+            1500
+        }
     }
 
     private fun stopAllService(isForced: Boolean = true) {
@@ -363,7 +382,7 @@ class CoreVpnService : VpnService(), ServiceControl {
         tun2SocksService?.stopTun2Socks()
         tun2SocksService = null
 
-        CoreServiceManager.stopCoreLoop()
+        coreServiceManager.stopCoreLoop()
 
         if (isForced) {
             //stopSelf has to be called ahead of mInterface.close(). otherwise v2ray core cannot be stooped

@@ -26,13 +26,21 @@ import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.viewmodel.MainViewModel
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class GroupServerFragment : Fragment() {
     private val ownerActivity: MainActivity
         get() = requireActivity() as MainActivity
     private val mainViewModel: MainViewModel by activityViewModels()
+    
+    @Inject lateinit var mmkvManager: MmkvManager
+    @Inject lateinit var angConfigManager: AngConfigManager
+    @Inject lateinit var settingsChangeManager: SettingsChangeManager
+
     private val subId: String by lazy { arguments?.getString(ARG_SUB_ID).orEmpty() }
 
     private val share_method: Array<out String> by lazy {
@@ -42,7 +50,7 @@ class GroupServerFragment : Fragment() {
         ownerActivity.resources.getStringArray(R.array.share_method_more)
     }
     private val launcher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (SettingsChangeManager.consumeRestartService() && mainViewModel.isRunningFlow.value) {
+        if (settingsChangeManager.consumeRestartService() && mainViewModel.isRunningFlow.value) {
             ownerActivity.restartV2Ray()
         }
     }
@@ -181,12 +189,12 @@ class GroupServerFragment : Fragment() {
      * @param position The position in the list
      */
     private fun removeServer(guid: String, position: Int) {
-        if (guid == MmkvManager.getSelectServer()) {
+        if (guid == mmkvManager.getSelectServer()) {
             ownerActivity.toast(R.string.toast_action_not_allowed)
             return
         }
 
-        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_CONFIRM_REMOVE)) {
+        if (mmkvManager.decodeSettingsBool(AppConfig.PREF_CONFIRM_REMOVE)) {
             AlertDialog.Builder(ownerActivity).setMessage(R.string.del_config_comfirm)
                 .setPositiveButton(android.R.string.ok) { _, _ ->
                     removeServerSub(guid)
@@ -214,9 +222,9 @@ class GroupServerFragment : Fragment() {
      * @param guid The server unique identifier to select
      */
     private fun setSelectServer(guid: String) {
-        val selected = MmkvManager.getSelectServer()
+        val selected = mmkvManager.getSelectServer()
         if (guid != selected) {
-            MmkvManager.setSelectServer(guid)
+            mmkvManager.setSelectServer(guid)
             mainViewModel.updateSelectedGuid()
 
             if (mainViewModel.isRunningFlow.value) {

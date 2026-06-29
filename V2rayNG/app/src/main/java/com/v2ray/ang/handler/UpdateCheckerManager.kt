@@ -6,7 +6,6 @@ import com.v2ray.ang.BuildConfig
 import com.v2ray.ang.dto.CheckUpdateResult
 import com.v2ray.ang.dto.GitHubRelease
 import com.v2ray.ang.dto.UrlContentRequest
-import com.v2ray.ang.extension.concatUrl
 import com.v2ray.ang.util.HttpUtil
 import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.LogUtil
@@ -18,89 +17,71 @@ object UpdateCheckerManager {
         val url = if (includePreRelease) {
             AppConfig.APP_API_URL
         } else {
-            AppConfig.APP_API_URL.concatUrl("latest")
+            AppConfig.APP_RELEASE_API_URL
         }
 
-        val proxyUsername = SettingsManager.getSocksUsername()
-        val proxyPassword = SettingsManager.getSocksPassword()
+        try {
+            val content = HttpUtil.getUrlContent(UrlContentRequest(url))
+            if (content == null) {
+                return@withContext CheckUpdateResult(false, "Network error")
+            }
 
-        var response = HttpUtil.getUrlContent(
-            UrlContentRequest(
-                url = url,
-                timeout = 5000
-            )
-        )
-        if (response.isNullOrEmpty()) {
-            val httpPort = SettingsManager.getHttpPort()
-            response = HttpUtil.getUrlContent(
-                UrlContentRequest(
-                    url = url,
-                    timeout = 5000,
-                    httpPort = httpPort,
-                    proxyUsername = proxyUsername,
-                    proxyPassword = proxyPassword
+            val releases = if (includePreRelease) {
+                JsonUtil.fromJsonSafe(content, Array<GitHubRelease>::class.java)?.toList()
+            } else {
+                JsonUtil.fromJsonSafe(content, GitHubRelease::class.java)?.let { listOf(it) }
+            }
+
+            if (releases == null || releases.isEmpty()) {
+                return@withContext CheckUpdateResult(false, "No release found")
+            }
+
+            val latest = releases[0]
+            val latestVersion = latest.tagName.removePrefix("v")
+            val currentVersion = BuildConfig.VERSION_NAME
+
+            if (isNewerVersion(latestVersion, currentVersion)) {
+                val apkAsset = latest.assets.find { asset ->
+                    asset.name.contains(getArchTag()) && asset.name.endsWith(".apk")
+                } ?: latest.assets.find { it.name.endsWith(".apk") }
+
+                return@withContext CheckUpdateResult(
+                    true,
+                    latestVersion,
+                    latest.publishedAt, // Using publishedAt as a fallback for html_url if missing
+                    apkAsset?.browserDownloadUrl,
+                    latest.body
                 )
-            )
-                ?: throw IllegalStateException("Failed to get response")
-        }
+            } else {
+                return@withContext CheckUpdateResult(false, "Already up to date")
+            }
 
-        val latestRelease = if (includePreRelease) {
-            JsonUtil.fromJsonSafe(response, Array<GitHubRelease>::class.java)
-                ?.firstOrNull()
-                ?: throw IllegalStateException("No pre-release found")
-        } else {
-            JsonUtil.fromJsonSafe(response, GitHubRelease::class.java)
-        }
-        if (latestRelease == null) {
-            return@withContext CheckUpdateResult(hasUpdate = false)
-        }
-
-        val latestVersion = latestRelease.tagName.removePrefix("v")
-        LogUtil.i(
-            AppConfig.TAG,
-            "Found new version: $latestVersion (current: ${BuildConfig.VERSION_NAME})"
-        )
-
-        return@withContext if (compareVersions(latestVersion, BuildConfig.VERSION_NAME) > 0) {
-            val downloadUrl = getDownloadUrl(latestRelease, Build.SUPPORTED_ABIS[0])
-            CheckUpdateResult(
-                hasUpdate = true,
-                latestVersion = latestVersion,
-                releaseNotes = latestRelease.body,
-                downloadUrl = downloadUrl,
-                isPreRelease = latestRelease.prerelease
-            )
-        } else {
-            CheckUpdateResult(hasUpdate = false)
+        } catch (e: Exception) {
+            LogUtil.e(AppConfig.TAG, "Update check failed", e)
+            return@withContext CheckUpdateResult(false, e.message ?: "Unknown error")
         }
     }
 
-    private fun compareVersions(version1: String, version2: String): Int {
-        val v1 = version1.split(".")
-        val v2 = version2.split(".")
-
-        for (i in 0 until maxOf(v1.size, v2.size)) {
-            val num1 = if (i < v1.size) v1[i].toInt() else 0
-            val num2 = if (i < v2.size) v2[i].toInt() else 0
-            if (num1 != num2) return num1 - num2
+    private fun isNewerVersion(latest: String, current: String): Boolean {
+        // Simple version comparison logic
+        val latestParts = latest.split('.').mapNotNull { it.toIntOrNull() }
+        val currentParts = current.split('.').mapNotNull { it.toIntOrNull() }
+        
+        for (i in 0 until minOf(latestParts.size, currentParts.size)) {
+            if (latestParts[i] > currentParts[i]) return true
+            if (latestParts[i] < currentParts[i]) return false
         }
-        return 0
+        return latestParts.size > currentParts.size
     }
 
-    private fun getDownloadUrl(release: GitHubRelease, abi: String): String {
-        val fDroid = "fdroid"
-
-        val assetsByAbi = release.assets.filter {
-            (it.name.contains(abi, true))
+    private fun getArchTag(): String {
+        val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: ""
+        return when {
+            abi.contains("arm64") -> "arm64-v8a"
+            abi.contains("armeabi") -> "armeabi-v7a"
+            abi.contains("x86_64") -> "x86_64"
+            abi.contains("x86") -> "x86"
+            else -> ""
         }
-
-        val asset = if (BuildConfig.APPLICATION_ID.contains(fDroid, ignoreCase = true)) {
-            assetsByAbi.firstOrNull { it.name.contains(fDroid) }
-        } else {
-            assetsByAbi.firstOrNull { !it.name.contains(fDroid) }
-        }
-
-        return asset?.browserDownloadUrl
-            ?: throw IllegalStateException("No compatible APK found")
     }
 }

@@ -4,11 +4,14 @@ import androidx.lifecycle.ViewModel
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.AppConfig.ANG_PACKAGE
 import com.v2ray.ang.util.LogUtil
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.IOException
+import javax.inject.Inject
 
-class LogcatViewModel : ViewModel() {
+@HiltViewModel
+class LogcatViewModel @Inject constructor() : ViewModel() {
     private val logsetsAll: MutableList<String> = mutableListOf()
     private var filteredLogs: List<String> = emptyList()
     private var currentFilter: String = ""

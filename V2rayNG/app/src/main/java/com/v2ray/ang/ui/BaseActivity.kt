@@ -19,12 +19,14 @@ import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.util.MyContextWrapper
 import com.v2ray.ang.util.Utils
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /**
  * BaseActivity provides common helpers and UI wiring used across the app's activities.
  */
+@AndroidEntryPoint
 abstract class BaseActivity : AppCompatActivity() {
     protected val isLoadingFlow = MutableStateFlow(false)
 

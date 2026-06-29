@@ -32,6 +32,7 @@ object MmkvManager {
     private const val KEY_SUB_SERVER_PREFIX = "SUB_SERVERS_"
     private const val KEY_SUB_IDS = "SUB_IDS"
     private const val KEY_WEBDAV_CONFIG = "WEBDAV_CONFIG"
+    private const val KEY_BLACKLIST = "blacklist_servers"
 
     private val mainStorage by lazy { MMKV.mmkvWithID(ID_MAIN, MMKV.MULTI_PROCESS_MODE) }
     private val profileFullStorage by lazy { MMKV.mmkvWithID(ID_PROFILE_FULL_CONFIG, MMKV.MULTI_PROCESS_MODE) }
@@ -703,8 +704,6 @@ object MmkvManager {
     fun removeSettings(key: String) {
         settingsStorage.removeValueForKey(key)
     }
-
-    private const val KEY_BLACKLIST = "blacklist_servers"
 
     fun blacklistConfig(serverKey: String) {
         val blacklist = decodeSettingsStringSet(KEY_BLACKLIST) ?: mutableSetOf()

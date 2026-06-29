@@ -4,10 +4,16 @@ import androidx.lifecycle.ViewModel
 import com.v2ray.ang.dto.entities.RulesetItem
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsManager
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import javax.inject.Inject
 
-class RoutingSettingsViewModel : ViewModel() {
+@HiltViewModel
+class RoutingSettingsViewModel @Inject constructor(
+    private val mmkvManager: MmkvManager,
+    private val settingsManager: SettingsManager
+) : ViewModel() {
     private val rulesets: MutableList<RulesetItem> = mutableListOf()
 
     private val _rulesetsFlow = MutableStateFlow<List<RulesetItem>>(emptyList())
@@ -19,7 +25,7 @@ class RoutingSettingsViewModel : ViewModel() {
     @Synchronized
     fun reload() {
         rulesets.clear()
-        rulesets.addAll(MmkvManager.decodeRoutingRulesets() ?: mutableListOf())
+        rulesets.addAll(mmkvManager.decodeRoutingRulesets() ?: mutableListOf())
         _rulesetsFlow.value = rulesets.toList()
     }
 
@@ -27,7 +33,7 @@ class RoutingSettingsViewModel : ViewModel() {
     fun update(position: Int, item: RulesetItem) {
         if (position in rulesets.indices) {
             rulesets[position] = item
-            SettingsManager.saveRoutingRuleset(position, item)
+            settingsManager.saveRoutingRuleset(position, item)
         }
     }
 
@@ -35,7 +41,7 @@ class RoutingSettingsViewModel : ViewModel() {
     fun swap(fromPosition: Int, toPosition: Int) {
         if (fromPosition in rulesets.indices && toPosition in rulesets.indices) {
             java.util.Collections.swap(rulesets, fromPosition, toPosition)
-            SettingsManager.swapRoutingRuleset(fromPosition, toPosition)
+            settingsManager.swapRoutingRuleset(fromPosition, toPosition)
             _rulesetsFlow.value = rulesets.toList()
         }
     }

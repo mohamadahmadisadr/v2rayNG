@@ -6,12 +6,18 @@ import com.v2ray.ang.dto.entities.SubscriptionItem
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import javax.inject.Inject
 
-class SubscriptionsViewModel : ViewModel() {
+@HiltViewModel
+class SubscriptionsViewModel @Inject constructor(
+    private val mmkvManager: MmkvManager,
+    private val settingsManager: SettingsManager
+) : ViewModel() {
     private val subscriptions: MutableList<SubscriptionCache> =
-        MmkvManager.decodeSubscriptions().toMutableList()
+        mmkvManager.decodeSubscriptions().toMutableList()
 
     private val _subscriptionsFlow = MutableStateFlow<List<SubscriptionCache>>(emptyList())
     val subscriptionsFlow = _subscriptionsFlow.asStateFlow()
@@ -26,7 +32,7 @@ class SubscriptionsViewModel : ViewModel() {
     @Synchronized
     fun reload() {
         subscriptions.clear()
-        subscriptions.addAll(MmkvManager.decodeSubscriptions())
+        subscriptions.addAll(mmkvManager.decodeSubscriptions())
         _subscriptionsFlow.value = subscriptions.toList()
     }
 
@@ -34,7 +40,7 @@ class SubscriptionsViewModel : ViewModel() {
     fun remove(subId: String): Boolean {
         val changed = subscriptions.removeAll { it.guid == subId }
         if (changed) {
-            SettingsManager.removeSubscriptionWithDefault(subId)
+            settingsManager.removeSubscriptionWithDefault(subId)
             SettingsChangeManager.makeSetupGroupTab()
             _subscriptionsFlow.value = subscriptions.toList()
         }
@@ -46,7 +52,7 @@ class SubscriptionsViewModel : ViewModel() {
         val idx = subscriptions.indexOfFirst { it.guid == subId }
         if (idx >= 0) {
             subscriptions[idx] = SubscriptionCache(subId, item)
-            MmkvManager.encodeSubscription(subId, item)
+            mmkvManager.encodeSubscription(subId, item)
             _subscriptionsFlow.value = subscriptions.toList()
         }
     }
@@ -56,7 +62,7 @@ class SubscriptionsViewModel : ViewModel() {
         if (fromPosition in subscriptions.indices && toPosition in subscriptions.indices) {
             val item = subscriptions.removeAt(fromPosition)
             subscriptions.add(toPosition, item)
-            SettingsManager.swapSubscriptions(fromPosition, toPosition)
+            settingsManager.swapSubscriptions(fromPosition, toPosition)
             SettingsChangeManager.makeSetupGroupTab()
             _subscriptionsFlow.value = subscriptions.toList()
         }

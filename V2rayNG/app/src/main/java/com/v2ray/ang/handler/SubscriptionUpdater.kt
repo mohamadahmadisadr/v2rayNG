@@ -21,6 +21,8 @@ import java.util.concurrent.TimeUnit
 
 object SubscriptionUpdater {
 
+    private const val KEY_SUB_ID = "subId"
+
     // -------------------------------------------------------------------------
     // Public API — the only methods external callers should ever use
     // -------------------------------------------------------------------------
@@ -144,8 +146,6 @@ object SubscriptionUpdater {
     // -------------------------------------------------------------------------
     // Worker
     // -------------------------------------------------------------------------
-
-    private const val KEY_SUB_ID = "subId"
 
     class UpdateTask(context: Context, params: WorkerParameters) :
         CoroutineWorker(context, params) {

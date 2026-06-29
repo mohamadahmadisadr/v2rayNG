@@ -10,11 +10,16 @@ import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.util.HttpUtil
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.Utils
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
+import javax.inject.Inject
 
-class UserAssetViewModel : ViewModel() {
+@HiltViewModel
+class UserAssetViewModel @Inject constructor(
+    private val mmkvManager: MmkvManager
+) : ViewModel() {
     private val assets = mutableListOf<AssetUrlCache>()
     private val builtInGeoFiles = listOf(AppConfig.GEOSITE_DAT, AppConfig.GEOIP_DAT, AppConfig.GEOIP_ONLY_CN_PRIVATE_DAT)
 
@@ -32,7 +37,7 @@ class UserAssetViewModel : ViewModel() {
 
     @Synchronized
     fun reload(geoFilesSource: String) {
-        val decoded = MmkvManager.decodeAssetUrls()
+        val decoded = mmkvManager.decodeAssetUrls()
         assets.clear()
         assets.addAll(buildAssetList(decoded, geoFilesSource))
         _assetsFlow.value = assets.toList()

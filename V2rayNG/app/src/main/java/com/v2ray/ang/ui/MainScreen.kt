@@ -1,11 +1,8 @@
 package com.v2ray.ang.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.border
@@ -26,13 +23,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.v2ray.ang.R
-import com.v2ray.ang.dto.GroupMapItem
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentContainerView
@@ -153,6 +150,15 @@ fun HomeContent(
     val isLoading by mainViewModel.isLoadingFlow.collectAsStateWithLifecycle()
     val autoBestProgress by mainViewModel.autoBestProgressFlow.collectAsStateWithLifecycle()
 
+    val configuration = LocalConfiguration.current
+    val screenHeight = configuration.screenHeightDp.dp
+    val isShortScreen = screenHeight < 640.dp
+    
+    val buttonSize = if (isShortScreen) 120.dp else 160.dp
+    val ringSize = if (isShortScreen) 150.dp else 200.dp
+    val topPadding = if (isShortScreen) 8.dp else 16.dp
+    val itemSpacing = if (isShortScreen) 16.dp else 32.dp
+
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -160,9 +166,9 @@ fun HomeContent(
         // Main Connection Area - Give it more space and allow internal scrolling if needed
         Box(
             modifier = Modifier
-                .weight(1.5f)
+                .weight(if (isShortScreen) 1f else 1.5f)
                 .fillMaxWidth()
-                .padding(top = 16.dp),
+                .padding(top = topPadding),
             contentAlignment = Alignment.TopCenter
         ) {
             Column(
@@ -178,7 +184,7 @@ fun HomeContent(
                         isRunning -> "CONNECTED"
                         else -> "DISCONNECTED"
                     },
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = if (isShortScreen) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = when {
                         isRunning -> Color(0xFF4CAF50)
@@ -187,20 +193,20 @@ fun HomeContent(
                     }
                 )
                 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(itemSpacing))
 
                 // Connection Button and Progress Ring
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier.padding(vertical = 16.dp)
+                    modifier = Modifier.padding(vertical = if (isShortScreen) 8.dp else 16.dp)
                 ) {
                     // Outer Progress / Status Ring
                     if (isLoading || isRunning) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(200.dp), // slightly larger than button
+                            modifier = Modifier.size(ringSize), // slightly larger than button
                             progress = { if (isRunning) 1f else 0.7f },
                             color = if (isRunning) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary,
-                            strokeWidth = 4.dp,
+                            strokeWidth = if (isShortScreen) 3.dp else 4.dp,
                             trackColor = if (isRunning) Color(0xFF4CAF50).copy(alpha = 0.1f) else MaterialTheme.colorScheme.surfaceVariant,
                             strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                         )
@@ -209,6 +215,7 @@ fun HomeContent(
                     ConnectionCircleButton(
                         isRunning = isRunning,
                         isLoading = isLoading,
+                        size = buttonSize,
                         onClick = onFabClick
                     )
                 }
@@ -217,7 +224,7 @@ fun HomeContent(
                 if (isLoading && autoBestProgress.isNotEmpty()) {
                     Card(
                         modifier = Modifier
-                            .padding(top = 24.dp)
+                            .padding(top = if (isShortScreen) 12.dp else 24.dp)
                             .padding(horizontal = 32.dp),
                         shape = CircleShape,
                         colors = CardDefaults.cardColors(
@@ -251,11 +258,11 @@ fun HomeContent(
                         style = MaterialTheme.typography.labelMedium,
                         color = Color(0xFF4CAF50),
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 24.dp)
+                        modifier = Modifier.padding(top = if (isShortScreen) 12.dp else 24.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(itemSpacing))
             }
         }
 
@@ -278,9 +285,9 @@ fun HomeContent(
 fun ConnectionCircleButton(
     isRunning: Boolean,
     isLoading: Boolean,
+    size: androidx.compose.ui.unit.Dp = 160.dp,
     onClick: () -> Unit
 ) {
-    val buttonSize = 160.dp // Reduced from 200dp to save vertical space
     val color = when {
         isLoading -> MaterialTheme.colorScheme.primaryContainer
         isRunning -> Color(0xFF4CAF50)
@@ -289,7 +296,7 @@ fun ConnectionCircleButton(
 
     Box(
         modifier = Modifier
-            .size(buttonSize)
+            .size(size)
             .clip(CircleShape)
             .background(
                 Brush.radialGradient(
@@ -306,7 +313,7 @@ fun ConnectionCircleButton(
     ) {
         if (isLoading) {
             CircularProgressIndicator(
-                modifier = Modifier.size(buttonSize * 0.6f),
+                modifier = Modifier.size(size * 0.6f),
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 strokeWidth = 4.dp
             )
@@ -314,7 +321,7 @@ fun ConnectionCircleButton(
             Icon(
                 painter = painterResource(if (isRunning) R.drawable.ic_stop_24dp else R.drawable.ic_play_24dp),
                 contentDescription = null,
-                modifier = Modifier.size(buttonSize * 0.4f),
+                modifier = Modifier.size(size * 0.4f),
                 tint = if (isRunning) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }

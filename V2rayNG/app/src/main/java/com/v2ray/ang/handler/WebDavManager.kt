@@ -35,6 +35,13 @@ object WebDavManager {
     }
 
     /**
+     * Auto-initialize from the WebDAV configuration stored in MMKV.
+     */
+    fun autoInit() {
+        MmkvManager.decodeWebDavConfig()?.let { init(it) }
+    }
+
+    /**
      * Upload a local file to a remote file name under the configured remoteBasePath.
      * The provided `remoteFileName` should be a file name (e.g. "backup_ng.zip").
      * The method will attempt to create parent directories via MKCOL before PUT.
@@ -58,126 +65,102 @@ object WebDavManager {
             val mediaType = when (localFile.extension.lowercase()) {
                 "zip" -> "application/zip"
                 "json" -> "application/json"
-                "txt" -> "text/plain"
                 else -> "application/octet-stream"
             }.toMediaTypeOrNull()
 
-            val body = localFile.asRequestBody(mediaType)
-            val req = applyAuth(Request.Builder().url(remote).put(body)).build()
-            cl.newCall(req).execute().use { resp ->
-                val success = resp.isSuccessful
-                if (success) {
-                    LogUtil.i(AppConfig.TAG, "WebDAV upload success: $remote")
-                } else {
-                    LogUtil.e(AppConfig.TAG, "WebDAV upload failed: $remote (HTTP ${resp.code})")
+            val requestBuilder = Request.Builder()
+                .url(remote)
+                .put(localFile.asRequestBody(mediaType))
+
+            cfg?.let {
+                if (it.username != null && it.password != null) {
+                    requestBuilder.header("Authorization", Credentials.basic(it.username, it.password))
                 }
-                return@withContext success
             }
+
+            val response = cl.newCall(requestBuilder.build()).execute()
+            LogUtil.d(AppConfig.TAG, "WebDAV upload: $remote -> ${response.code}")
+            response.isSuccessful
         } catch (e: Exception) {
-            LogUtil.e(AppConfig.TAG, "WebDAV upload exception: $remote", e)
-            return@withContext false
+            LogUtil.e(AppConfig.TAG, "WebDAV upload failed: $remote", e)
+            false
         }
     }
 
     /**
-     * Download a remote file (relative to configured remoteBasePath) into a local file.
+     * Download a remote file to a local destination.
      *
      * @param remoteFileName Remote file name relative to configured remoteBasePath.
-     * @param destFile Local destination file to write to.
-     * @return true if download and write succeeded, false otherwise.
+     * @param destFile Local destination file.
+     * @return true if download succeeded, false otherwise.
      */
     suspend fun downloadFile(remoteFileName: String, destFile: File): Boolean = withContext(Dispatchers.IO) {
         val remote = buildRemoteUrl(remoteFileName)
         try {
             val cl = client ?: return@withContext false
-            val req = applyAuth(Request.Builder().url(remote).get()).build()
-            cl.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) {
-                    LogUtil.e(AppConfig.TAG, "WebDAV download failed: $remote (HTTP ${resp.code})")
-                    return@withContext false
-                }
 
-                resp.body.byteStream().use { input ->
-                    destFile.parentFile?.mkdirs()
-                    FileOutputStream(destFile).use { fos ->
-                        input.copyTo(fos)
+            val requestBuilder = Request.Builder()
+                .url(remote)
+                .get()
+
+            cfg?.let {
+                if (it.username != null && it.password != null) {
+                    requestBuilder.header("Authorization", Credentials.basic(it.username, it.password))
+                }
+            }
+
+            val response = cl.newCall(requestBuilder.build()).execute()
+            if (response.isSuccessful) {
+                response.body?.byteStream()?.use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
                     }
                 }
-
-                LogUtil.i(AppConfig.TAG, "WebDAV download success: $remote")
-                return@withContext true
+                true
+            } else {
+                LogUtil.d(AppConfig.TAG, "WebDAV download failed: ${response.code}")
+                false
             }
         } catch (e: Exception) {
-            LogUtil.e(AppConfig.TAG, "WebDAV download exception: $remote", e)
-            return@withContext false
+            LogUtil.e(AppConfig.TAG, "WebDAV download error: $remote", e)
+            false
         }
     }
 
-    /**
-     * Build a full remote URL by combining the configured base URL, the configured
-     * remote base path and a file name provided by the caller.
-     *
-     * Example: baseUrl="https://example.com/remote.php/dav", remoteBasePath="backups",
-     * remoteFileName="backup_ng.zip" => "https://example.com/remote.php/dav/backups/backup_ng.zip"
-     *
-     * @param remoteFileName A file name relative to the configured remoteBasePath (no leading slash required).
-     * @return Full URL string used for HTTP operations.
-     */
-    private fun buildRemoteUrl(remoteFileName: String): String {
+    private fun buildRemoteUrl(fileName: String): String {
         val base = cfg?.baseUrl?.trimEnd('/') ?: ""
-        // Use configured remoteBasePath when not empty; otherwise fallback to AppConfig.WEBDAV_BACKUP_DIR
-        val basePathConfigured = cfg?.remoteBasePath?.trim('/')?.takeIf { it.isNotEmpty() }
-        val basePath = basePathConfigured ?: AppConfig.WEBDAV_BACKUP_DIR
-        val rel = remoteFileName.trimStart('/')
-        return if (basePath.isEmpty()) "$base/$rel" else "$base/$basePath/$rel"
+        val path = cfg?.remoteBasePath?.trim('/') ?: ""
+        return if (path.isEmpty()) "$base/$fileName" else "$base/$path/$fileName"
     }
 
-    /**
-     * Apply HTTP Basic authentication headers to the given request builder when
-     * username is configured in `cfg`.
-     *
-     * @param builder OkHttp Request.Builder to modify.
-     * @return The same builder instance with Authorization header applied if credentials exist.
-     */
-    private fun applyAuth(builder: Request.Builder): Request.Builder {
-        val username = cfg?.username
-        val password = cfg?.password
-        if (!username.isNullOrEmpty()) {
-            builder.header("Authorization", Credentials.basic(username, password ?: ""))
-        }
-        return builder
-    }
-
-    /**
-     * Ensure that each directory segment in the given directory URL exists on the
-     * WebDAV server. This issues MKCOL requests for each segment in a best-effort
-     * manner and ignores errors for segments that already exist.
-     *
-     * @param dirUrl Absolute URL to the directory that should exist (e.g. https://.../backups)
-     */
     private fun ensureRemoteDirs(dirUrl: String) {
+        // Simple sequential MKCOL for each path segment
+        // In a real app, you'd want to check existence (PROPFIND) first.
+        val base = cfg?.baseUrl?.trimEnd('/') ?: ""
+        val relativePath = dirUrl.removePrefix(base).trim('/')
+        if (relativePath.isEmpty()) return
+
+        val segments = relativePath.split('/')
+        var currentPath = base
+        segments.forEach { segment ->
+            currentPath += "/$segment"
+            mkCol(currentPath)
+        }
+    }
+
+    private fun mkCol(url: String) {
         try {
-            val cl = client ?: return
-            val url = URL(dirUrl)
-            val segments = url.path.split("/").filter { it.isNotEmpty() }
-            var accum = ""
-            for (seg in segments) {
-                accum += "/$seg"
-                val mkUrl = URL(url.protocol, url.host, if (url.port == -1) -1 else url.port, accum).toString()
-                try {
-                    val req = applyAuth(Request.Builder().url(mkUrl).method("MKCOL", null)).build()
-                    cl.newCall(req).execute().use { resp ->
-                        // 201 Created or 405 Method Not Allowed (already exists) are acceptable
-                        if (resp.code != 201 && resp.code != 405 && resp.code != 409) {
-                            LogUtil.w(AppConfig.TAG, "WebDAV MKCOL $mkUrl returned ${resp.code}")
-                        }
-                    }
-                } catch (_: Exception) {
-                    // best-effort, continue
+            val requestBuilder = Request.Builder()
+                .url(url)
+                .method("MKCOL", null)
+
+            cfg?.let {
+                if (it.username != null && it.password != null) {
+                    requestBuilder.header("Authorization", Credentials.basic(it.username, it.password))
                 }
             }
-        } catch (e: Exception) {
-            LogUtil.e(AppConfig.TAG, "WebDAV ensureRemoteDirs error", e)
-        }
+
+            client?.newCall(requestBuilder.build())?.execute()?.close()
+        } catch (_: Exception) {}
     }
 }

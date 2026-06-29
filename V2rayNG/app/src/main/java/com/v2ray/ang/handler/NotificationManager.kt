@@ -18,6 +18,7 @@ import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.extension.toSpeedString
 import com.v2ray.ang.ui.MainActivity
 import com.v2ray.ang.util.LogUtil
+import com.v2ray.ang.util.Utils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,11 +38,10 @@ object NotificationManager {
     private var lastQueryTime = 0L
     private var mBuilder: NotificationCompat.Builder? = null
     private var speedNotificationJob: Job? = null
-    private var mNotificationManager: NotificationManager? = null
+    private var mNotificationManager: android.app.NotificationManager? = null
 
     /**
      * Starts the speed notification.
-     * @param currentConfig The current profile configuration.
      */
     fun startSpeedNotification() {
         if (MmkvManager.decodeSettingsBool(AppConfig.PREF_SPEED_ENABLED) != true) return
@@ -86,14 +86,12 @@ object NotificationManager {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 createNotificationChannel()
             } else {
-                // If earlier version channel ID is not used
-                // https://developer.android.com/reference/android/support/v4/app/NotificationCompat.Builder.html#NotificationCompat.Builder(android.content.Context)
                 ""
             }
 
         mBuilder = NotificationCompat.Builder(service, channelId)
             .setSmallIcon(R.drawable.ic_stat_name)
-            .setContentTitle(currentConfig?.remarks)
+            .setContentTitle(currentConfig?.remarks ?: "v2rayNG")
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)
             .setShowWhen(false)
@@ -109,8 +107,6 @@ object NotificationManager {
                 service.getString(R.string.title_service_restart),
                 restartV2RayPendingIntent
             )
-
-        //mBuilder?.setDefaults(NotificationCompat.FLAG_ONLY_ALERT_ONCE)
 
         service.startForeground(NOTIFICATION_ID, mBuilder?.build())
     }
@@ -139,142 +135,88 @@ object NotificationManager {
         }
     }
 
-    /**
-     * Creates a notification channel for Android O and above.
-     * @return The channel ID.
-     */
     @RequiresApi(Build.VERSION_CODES.O)
     private fun createNotificationChannel(): String {
-        val channelId = AppConfig.RAY_NG_CHANNEL_ID
-        val channelName = AppConfig.RAY_NG_CHANNEL_NAME
+        val channelId = "v2rayng_channel_id"
+        val channelName = "v2rayng_channel_name"
         val chan = NotificationChannel(
             channelId,
-            channelName, NotificationManager.IMPORTANCE_HIGH
+            channelName, android.app.NotificationManager.IMPORTANCE_LOW
         )
         chan.lightColor = Color.DKGRAY
-        chan.importance = NotificationManager.IMPORTANCE_NONE
         chan.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
         getNotificationManager()?.createNotificationChannel(chan)
         return channelId
     }
 
-    /**
-     * Updates the notification with the given content text and traffic data.
-     * @param contentText The content text.
-     * @param proxyTraffic The proxy traffic.
-     * @param directTraffic The direct traffic.
-     */
-    private fun updateNotification(contentText: String?, proxyTraffic: Long, directTraffic: Long) {
-        if (mBuilder != null) {
-            if (proxyTraffic < NOTIFICATION_ICON_THRESHOLD && directTraffic < NOTIFICATION_ICON_THRESHOLD) {
-                mBuilder?.setSmallIcon(R.drawable.ic_stat_name)
-            } else if (proxyTraffic > directTraffic) {
-                mBuilder?.setSmallIcon(R.drawable.ic_stat_proxy)
-            } else {
-                mBuilder?.setSmallIcon(R.drawable.ic_stat_direct)
+    private fun updateNotification(contentText: String?, proxyTotal: Long, directTotal: Long) {
+        val service = getService() ?: return
+        if (mBuilder == null) {
+            showNotification(CoreServiceManager.currentConfig)
+        }
+
+        mBuilder?.let { builder ->
+            if (contentText != null) {
+                builder.setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+                builder.setContentText(contentText)
             }
-            mBuilder?.setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
-            mBuilder?.setContentText(contentText)
-            getNotificationManager()?.notify(NOTIFICATION_ID, mBuilder?.build())
+            getNotificationManager()?.notify(NOTIFICATION_ID, builder.build())
         }
     }
 
-    /**
-     * Gets the notification manager.
-     * @return The notification manager.
-     */
-    private fun getNotificationManager(): NotificationManager? {
+    private fun getNotificationManager(): android.app.NotificationManager? {
         if (mNotificationManager == null) {
             val service = getService() ?: return null
-            mNotificationManager = service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            mNotificationManager = service.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         }
         return mNotificationManager
     }
 
-    /**
-     * Appends the speed string to the given text.
-     * @param text The text to append to.
-     * @param name The name of the tag.
-     * @param up The uplink speed.
-     * @param down The downlink speed.
-     */
-    private fun appendSpeedString(text: StringBuilder, name: String?, up: Double, down: Double) {
-        var n = name ?: "no tag"
-        n = n.take(min(n.length, 6))
-        text.append(n)
-        for (i in n.length..6 step 2) {
-            text.append("\t")
-        }
-        text.append("•  ${up.toLong().toSpeedString()}↑  ${down.toLong().toSpeedString()}↓\n")
-    }
-
-    /**
-     * Updates the speed notification once.
-     * Queries traffic stats, separates proxy and direct, and updates the notification.
-     * @param lastZeroSpeed The previous zero speed state.
-     * @return The current zero speed state.
-     */
     private fun updateSpeedNotificationOnce(lastZeroSpeed: Boolean): Boolean {
-        val queryTime = System.currentTimeMillis()
-        val sinceLastQueryIn = (queryTime - lastQueryTime)
-
-        // If the query interval is too short, skip this round to avoid excessive CPU usage
-        if (sinceLastQueryIn < QUERY_INTERVAL_MS) {
-            LogUtil.w(AppConfig.TAG, "Query interval too short: ${sinceLastQueryIn}ms, skipping")
-            lastQueryTime = queryTime
-            return lastZeroSpeed
-        }
-        val sinceLastQueryInSeconds = sinceLastQueryIn / 1000.0
-
-        var proxyUplink = 0L
-        var proxyDownlink = 0L
-        var directUplink = 0L
-        var directDownlink = 0L
-
-        CoreServiceManager.queryAllOutboundTrafficStats().forEach { stat ->
-            when {
-                stat.tag == AppConfig.TAG_DIRECT -> {
-                    when (stat.direction) {
-                        AppConfig.UPLINK -> directUplink += stat.value
-                        AppConfig.DOWNLINK -> directDownlink += stat.value
-                    }
-                }
-
-                stat.tag.startsWith(AppConfig.TAG_PROXY) -> {
-                    when (stat.direction) {
-                        AppConfig.UPLINK -> proxyUplink += stat.value
-                        AppConfig.DOWNLINK -> proxyDownlink += stat.value
-                    }
+        var isZeroSpeed = lastZeroSpeed
+        try {
+            val stats = CoreServiceManager.queryAllOutboundTrafficStats()
+            var proxyUplink = 0L
+            var proxyDownlink = 0L
+            var directUplink = 0L
+            var directDownlink = 0L
+            
+            stats.forEach {
+                if (it.tag == AppConfig.TAG_PROXY) {
+                    if (it.direction == AppConfig.UPLINK) proxyUplink += it.value
+                    if (it.direction == AppConfig.DOWNLINK) proxyDownlink += it.value
+                } else if (it.tag == AppConfig.TAG_DIRECT) {
+                    if (it.direction == AppConfig.UPLINK) directUplink += it.value
+                    if (it.direction == AppConfig.DOWNLINK) directDownlink += it.value
                 }
             }
-        }
 
-        val proxyTotal = proxyUplink + proxyDownlink
-        val directTotal = directUplink + directDownlink
-        val zeroSpeed = proxyTotal + directTotal == 0L
-        if (!zeroSpeed || !lastZeroSpeed) {
-            val text = StringBuilder()
-            appendSpeedString(
-                text, AppConfig.TAG_PROXY,
-                proxyUplink / sinceLastQueryInSeconds,
-                proxyDownlink / sinceLastQueryInSeconds
-            )
+            val queryTime = System.currentTimeMillis()
+            val sinceLastQueryInSeconds = (queryTime - lastQueryTime) / 1000.0
+            if (sinceLastQueryInSeconds <= 0) return lastZeroSpeed
 
-            appendSpeedString(
-                text, AppConfig.TAG_DIRECT,
-                directUplink / sinceLastQueryInSeconds,
-                directDownlink / sinceLastQueryInSeconds
-            )
-            updateNotification(text.toString(), proxyTotal, directTotal)
+            val proxyTotal = proxyUplink + proxyDownlink
+            val directTotal = directUplink + directDownlink
+            val zeroSpeed = proxyTotal + directTotal == 0L
+            
+            if (!zeroSpeed || !lastZeroSpeed) {
+                val text = StringBuilder()
+                appendSpeedString(text, AppConfig.TAG_PROXY, proxyUplink / sinceLastQueryInSeconds, proxyDownlink / sinceLastQueryInSeconds)
+                appendSpeedString(text, AppConfig.TAG_DIRECT, directUplink / sinceLastQueryInSeconds, directDownlink / sinceLastQueryInSeconds)
+                updateNotification(text.toString(), proxyTotal, directTotal)
+            }
+            lastQueryTime = queryTime
+            isZeroSpeed = zeroSpeed
+        } catch (_: Exception) {
         }
-        lastQueryTime = queryTime
-        return zeroSpeed
+        return isZeroSpeed
     }
 
-    /**
-     * Gets the service instance.
-     * @return The service instance.
-     */
+    private fun appendSpeedString(sb: StringBuilder, tag: String, up: Double, down: Double) {
+        if (sb.isNotEmpty()) sb.append("\n")
+        sb.append("$tag: ↑${up.toLong().toSpeedString()} ↓${down.toLong().toSpeedString()}")
+    }
+
     private fun getService(): Service? {
         return CoreServiceManager.serviceControl?.get()?.getService()
     }

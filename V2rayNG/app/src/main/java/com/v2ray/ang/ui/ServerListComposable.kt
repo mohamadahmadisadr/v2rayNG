@@ -77,13 +77,14 @@ fun ServerItem(
     testResult: String
 ) {
     val profile = server.profile
-    val guid = server.guid
     val isTimeout = testResult == "timeout"
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val isShortScreen = configuration.screenHeightDp < 640
 
     OutlinedCard(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(horizontal = 12.dp, vertical = if (isShortScreen) 4.dp else 6.dp)
             .clickable { onSelect() },
         shape = MaterialTheme.shapes.small,
         border = BorderStroke(
@@ -99,14 +100,14 @@ fun ServerItem(
     ) {
         Row(
             modifier = Modifier
-                .padding(16.dp)
+                .padding(if (isShortScreen) 12.dp else 16.dp)
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = profile.remarks,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = if (isShortScreen) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1
@@ -120,7 +121,7 @@ fun ServerItem(
                 )
                 
                 Row(
-                    modifier = Modifier.padding(top = 8.dp),
+                    modifier = Modifier.padding(top = if (isShortScreen) 4.dp else 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Protocol Label

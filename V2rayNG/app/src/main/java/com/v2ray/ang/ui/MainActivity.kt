@@ -52,11 +52,24 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.isActive
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class MainActivity : HelperBaseActivity() {
     val mainViewModel: MainViewModel by viewModels()
+    
+    @Inject lateinit var mmkvManager: MmkvManager
+    @Inject lateinit var settingsManager: SettingsManager
+    @Inject lateinit var angConfigManager: AngConfigManager
+    @Inject lateinit var subscriptionUpdater: SubscriptionUpdater
+    @Inject lateinit var speedtestManager: SpeedtestManager
+    @Inject lateinit var settingsChangeManager: SettingsChangeManager
+    @Inject lateinit var autoBestConfigManager: AutoBestConfigManager
+    @Inject lateinit var coreServiceManager: CoreServiceManager
+
     private val groupsState = MutableStateFlow<List<com.v2ray.ang.dto.GroupMapItem>>(emptyList())
 
     private enum class PendingAction { NONE, START_V2RAY, START_AUTO_BEST }
@@ -75,13 +88,13 @@ class MainActivity : HelperBaseActivity() {
         pendingAction = PendingAction.NONE
     }
     private val requestActivityLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (SettingsChangeManager.consumeRestartService()) {
+        if (settingsChangeManager.consumeRestartService()) {
             mainViewModel.reloadServerList()
             if (mainViewModel.isRunningFlow.value) {
                 restartV2Ray()
             }
         }
-        if (SettingsChangeManager.consumeSetupGroupTab()) {
+        if (settingsChangeManager.consumeSetupGroupTab()) {
             setupGroupTab()
         }
     }
@@ -128,7 +141,7 @@ class MainActivity : HelperBaseActivity() {
                         confirmButton = { TextButton(onClick = { qrCodeGuid.value = null }) { Text("OK") } },
                         title = { Text("QR Code") },
                         text = {
-                            val bitmap = remember(qrGuid) { AngConfigManager.share2QRCode(qrGuid!!) }
+                            val bitmap = remember(qrGuid) { angConfigManager.share2QRCode(qrGuid!!) }
                             bitmap?.let {
                                 androidx.compose.foundation.Image(
                                     bitmap = it.asImageBitmap(),
@@ -143,12 +156,12 @@ class MainActivity : HelperBaseActivity() {
         }
 
         setupViewModel()
-        SubscriptionUpdater.sync()
+        subscriptionUpdater.sync()
         mainViewModel.reloadServerList()
 
-        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_AUTO_BEST_CONFIG, true)) {
+        if (mmkvManager.decodeSettingsBool(AppConfig.PREF_AUTO_BEST_CONFIG, true)) {
             mainViewModel.startAutoBestConfig()
-        } else if (MmkvManager.decodeSettingsBool(AppConfig.PREF_AUTO_PING_ON_START, true)) {
+        } else if (mmkvManager.decodeSettingsBool(AppConfig.PREF_AUTO_PING_ON_START, true)) {
             mainViewModel.testAllRealPing()
         }
 
@@ -163,10 +176,10 @@ class MainActivity : HelperBaseActivity() {
         // Passive revalidation: Only check if connection is alive when user returns to app
         if (mainViewModel.isRunningFlow.value) {
             lifecycleScope.launch(Dispatchers.IO) {
-                val currentGuid = MmkvManager.getSelectServer()
-                val config = currentGuid?.let { MmkvManager.decodeServerConfig(it) }
+                val currentGuid = mmkvManager.getSelectServer()
+                val config = currentGuid?.let { mmkvManager.decodeServerConfig(it) }
                 if (config != null && config.server != null && config.serverPort != null) {
-                    val ok = SpeedtestManager.socketConnectTime(config.server!!, config.serverPort!!.toInt(), 2500) > 0
+                    val ok = speedtestManager.socketConnectTime(config.server!!, config.serverPort!!.toInt(), 2500) > 0
                     if (!ok) {
                         LogUtil.d(AppConfig.TAG, "Connection failed on resume, triggering auto-best")
                         withContext(Dispatchers.Main) {
@@ -254,7 +267,7 @@ class MainActivity : HelperBaseActivity() {
             if (group.id.isEmpty()) {
                 group
             } else {
-                val count = MmkvManager.decodeServerList(group.id).size
+                val count = mmkvManager.decodeServerList(group.id).size
                 group.copy(remarks = "${group.remarks} ($count)")
             }
         }
@@ -286,7 +299,7 @@ class MainActivity : HelperBaseActivity() {
     }
 
     private fun share2Clipboard(guid: String) {
-        if (AngConfigManager.share2Clipboard(this, guid) == 0) {
+        if (angConfigManager.share2Clipboard(this, guid) == 0) {
             toastSuccess(R.string.toast_success)
         } else {
             toastError(R.string.toast_failure)
@@ -295,7 +308,7 @@ class MainActivity : HelperBaseActivity() {
 
     private fun shareFullContent(guid: String) {
         lifecycleScope.launch(Dispatchers.IO) {
-            val result = AngConfigManager.shareFullContent2Clipboard(this@MainActivity, guid)
+            val result = angConfigManager.shareFullContent2Clipboard(this@MainActivity, guid)
             launch(Dispatchers.Main) {
                 if (result == 0) {
                     toastSuccess(R.string.toast_success)
@@ -324,12 +337,12 @@ class MainActivity : HelperBaseActivity() {
     }
 
     private fun removeServer(guid: String, position: Int) {
-        if (guid == MmkvManager.getSelectServer()) {
+        if (guid == mmkvManager.getSelectServer()) {
             toast(R.string.toast_action_not_allowed)
             return
         }
 
-        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_CONFIRM_REMOVE)) {
+        if (mmkvManager.decodeSettingsBool(AppConfig.PREF_CONFIRM_REMOVE)) {
             androidx.appcompat.app.AlertDialog.Builder(this).setMessage(R.string.del_config_comfirm)
                 .setPositiveButton(android.R.string.ok) { _, _ ->
                     removeServerSub(guid)
@@ -349,9 +362,9 @@ class MainActivity : HelperBaseActivity() {
 
     private fun handleFabAction() {
         if (mainViewModel.isRunningFlow.value) {
-            CoreServiceManager.stopVService(this)
+            coreServiceManager.stopVService(this)
         } else if (mainViewModel.isLoadingFlow.value) {
-            AutoBestConfigManager.stop()
+            autoBestConfigManager.stop()
             mainViewModel.setLoading(false)
         } else {
             if (checkAndRequestVpnPermission(PendingAction.START_AUTO_BEST)) {
@@ -379,15 +392,15 @@ class MainActivity : HelperBaseActivity() {
     }
 
     private fun setSelectServer(guid: String) {
-        val selected = MmkvManager.getSelectServer()
+        val selected = mmkvManager.getSelectServer()
         if (guid != selected) {
-            MmkvManager.setSelectServer(guid)
+            mmkvManager.setSelectServer(guid)
             mainViewModel.updateSelectedGuid()
 
             if (mainViewModel.isRunningFlow.value) {
                 restartV2Ray()
             } else {
-                AutoBestConfigManager.stop()
+                autoBestConfigManager.stop()
                 if (checkAndRequestVpnPermission(PendingAction.START_V2RAY)) {
                     startV2Ray()
                 }
@@ -396,18 +409,18 @@ class MainActivity : HelperBaseActivity() {
     }
 
     private fun startV2Ray() {
-        if (MmkvManager.getSelectServer().isNullOrEmpty()) {
+        if (mmkvManager.getSelectServer().isNullOrEmpty()) {
             toast(R.string.title_file_chooser)
             return
         }
         if (checkAndRequestVpnPermission(PendingAction.START_V2RAY)) {
-            CoreServiceManager.startVService(this)
+            coreServiceManager.startVService(this)
         }
     }
 
     fun restartV2Ray() {
         if (mainViewModel.isRunningFlow.value) {
-            CoreServiceManager.stopVService(this)
+            coreServiceManager.stopVService(this)
         }
         lifecycleScope.launch {
             delay(500)
@@ -462,7 +475,7 @@ class MainActivity : HelperBaseActivity() {
         mainViewModel.setLoading(true)
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val (count, countSub) = AngConfigManager.importBatchConfig(server, mainViewModel.subscriptionId, true)
+                val (count, countSub) = angConfigManager.importBatchConfig(server, mainViewModel.subscriptionId, true)
                 delay(500L)
                 withContext(Dispatchers.Main) {
                     when {
@@ -516,7 +529,7 @@ class MainActivity : HelperBaseActivity() {
                     if (result.configCount > 0) {
                         mainViewModel.reloadServerList()
                         refreshGroupTabTitles()
-                        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_AUTO_PING_ON_START, true)) {
+                        if (mmkvManager.decodeSettingsBool(AppConfig.PREF_AUTO_PING_ON_START, true)) {
                             mainViewModel.testAllRealPing()
                         }
                     }
@@ -702,7 +715,7 @@ class MainActivity : HelperBaseActivity() {
     }
 
     override fun onDestroy() {
-        AutoBestConfigManager.stop()
+        autoBestConfigManager.stop()
         super.onDestroy()
     }
 }
