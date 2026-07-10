@@ -14,10 +14,11 @@
 // sing-box's internal (version-volatile) outbound-dial APIs.
 //
 // ─────────────────────────────────────────────────────────────────────────────────────
-// VERSION NOTE: this targets sing-box v1.11.x. The context/registry construction below
-// (box.Context + include.*Registry) and the JSON unmarshal helper changed across releases:
+// VERSION NOTE: this targets sing-box v1.13.x. The context/registry construction below
+// (box.Context + include.*Registry) is version-sensitive:
 //   - 1.11: box.Context(ctx, inbound, outbound, endpoint)
-//   - 1.12+: adds a DNS-transport registry argument
+//   - 1.12+: adds a DNS-transport registry argument (used below)
+// The JSON unmarshal helper lives in the `sing` library, not sing-box.
 // If a build fails here, use cmd/sing-box/cmd_run.go of your pinned version as the
 // reference for how to build the context and unmarshal option.Options.
 // ─────────────────────────────────────────────────────────────────────────────────────
@@ -29,9 +30,10 @@ import (
 	"sync"
 
 	box "github.com/sagernet/sing-box"
-	"github.com/sagernet/sing-box/common/json"
+	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/include"
 	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing/common/json"
 )
 
 // libVersion is bumped independently of sing-box for the Kotlin side to sanity-check the AAR.
@@ -74,8 +76,16 @@ func (c *CoreController) StartLoop(configContent string, tunFd int32) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Build the protocol registries into the context (sing-box 1.11 style).
-	ctx = box.Context(ctx, include.InboundRegistry(), include.OutboundRegistry(), include.EndpointRegistry())
+	// Build the protocol registries into the context (sing-box 1.12+ takes a DNS-transport
+	// registry as the 5th argument).
+	ctx = box.Context(
+		ctx,
+		include.InboundRegistry(),
+		include.OutboundRegistry(),
+		include.EndpointRegistry(),
+		include.DNSTransportRegistry(),
+		include.ServiceRegistry(),
+	)
 
 	options, err := json.UnmarshalExtendedContext[option.Options](ctx, []byte(configContent))
 	if err != nil {
@@ -144,5 +154,5 @@ func (c *CoreController) QueryAllOutboundTrafficStats() string {
 
 // CheckVersion reports the wrapper and sing-box versions.
 func CheckVersion() string {
-	return fmt.Sprintf("LibSingBox v%d, sing-box %s", libVersion, box.Version())
+	return fmt.Sprintf("LibSingBox v%d, sing-box %s", libVersion, C.Version)
 }
