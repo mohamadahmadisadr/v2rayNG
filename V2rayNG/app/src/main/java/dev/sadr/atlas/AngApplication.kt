@@ -46,7 +46,12 @@ class AngApplication : MultiDexApplication(), Configuration.Provider {
         super.onCreate()
 
         MMKV.initialize(this)
-        
+
+        // Resolve the active proxy engine from settings (defaults to xray) before any
+        // core work happens. Single point that selects xray vs. sing-box.
+        dev.sadr.atlas.core.CoreNativeManager.engine =
+            dev.sadr.atlas.core.engine.ProxyEngineProvider.activeEngine()
+
         // Ensure native library is loaded early and only once
         dev.sadr.atlas.core.CoreNativeManager.ensureLibraryLoaded()
 
