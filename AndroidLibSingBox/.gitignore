@@ -1,0 +1,2 @@
+# Built artifact (produced by compile-singbox.sh) — build locally, don't commit the 50MB+ AAR
+*.aar
