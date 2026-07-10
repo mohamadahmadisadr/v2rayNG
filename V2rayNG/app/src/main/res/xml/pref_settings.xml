@@ -294,7 +294,7 @@
 
         <CheckBoxPreference
             android:key="pref_auto_best_config"
-            android:defaultValue="true"
+            android:defaultValue="false"
             android:summary="@string/summary_pref_auto_best_config"
             android:title="@string/title_auto_best_config" />
 

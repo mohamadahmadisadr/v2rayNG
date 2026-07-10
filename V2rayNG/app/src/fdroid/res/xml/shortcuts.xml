@@ -8,11 +8,10 @@
         android:shortcutLongLabel="@string/app_widget_name"
         android:shortcutShortLabel="@string/app_widget_name">
 
-        <!--suppress AndroidDomInspection -->
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetClass="com.v2ray.ang.ui.ScSwitchActivity"
-            android:targetPackage="com.v2ray.ang.fdroid" />
+            android:targetClass="dev.sadr.atlas.ui.ScSwitchActivity"
+            android:targetPackage="dev.sadr.atlas.fdroid" />
         <categories android:name="android.shortcut.conversation" />
     </shortcut>
     <shortcut
@@ -23,11 +22,10 @@
         android:shortcutLongLabel="@string/menu_item_import_config_qrcode"
         android:shortcutShortLabel="@string/menu_item_import_config_qrcode">
 
-        <!--suppress AndroidDomInspection -->
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetClass="com.v2ray.ang.ui.ScScannerActivity"
-            android:targetPackage="com.v2ray.ang.fdroid" />
+            android:targetClass="dev.sadr.atlas.ui.ScScannerActivity"
+            android:targetPackage="dev.sadr.atlas.fdroid" />
         <categories android:name="android.shortcut.conversation" />
     </shortcut>
     <shortcut
@@ -38,11 +36,10 @@
         android:shortcutLongLabel="@string/toast_services_start"
         android:shortcutShortLabel="@string/toast_services_start">
 
-        <!--suppress AndroidDomInspection -->
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetClass="com.v2ray.ang.ui.ScStartActivity"
-            android:targetPackage="com.v2ray.ang.fdroid" />
+            android:targetClass="dev.sadr.atlas.ui.ScStartActivity"
+            android:targetPackage="dev.sadr.atlas.fdroid" />
         <categories android:name="android.shortcut.conversation" />
     </shortcut>
     <shortcut
@@ -53,11 +50,10 @@
         android:shortcutLongLabel="@string/toast_services_stop"
         android:shortcutShortLabel="@string/toast_services_stop">
 
-        <!--suppress AndroidDomInspection -->
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetClass="com.v2ray.ang.ui.ScStopActivity"
-            android:targetPackage="com.v2ray.ang.fdroid" />
+            android:targetClass="dev.sadr.atlas.ui.ScStopActivity"
+            android:targetPackage="dev.sadr.atlas.fdroid" />
         <categories android:name="android.shortcut.conversation" />
     </shortcut>
 </shortcuts>

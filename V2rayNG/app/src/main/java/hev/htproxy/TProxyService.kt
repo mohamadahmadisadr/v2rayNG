@@ -2,11 +2,11 @@ package hev.htproxy
 
 import android.content.Context
 import android.os.ParcelFileDescriptor
-import com.v2ray.ang.AppConfig
-import com.v2ray.ang.contracts.Tun2SocksControl
-import com.v2ray.ang.handler.MmkvManager
-import com.v2ray.ang.handler.SettingsManager
-import com.v2ray.ang.util.LogUtil
+import dev.sadr.atlas.AppConfig
+import dev.sadr.atlas.contracts.Tun2SocksControl
+import dev.sadr.atlas.handler.MmkvManager
+import dev.sadr.atlas.handler.SettingsManager
+import dev.sadr.atlas.util.LogUtil
 import java.io.File
 
 /**
