@@ -31,18 +31,18 @@ import dev.sadr.atlas.service.IDialerService
 import dev.sadr.atlas.util.LogUtil
 import dev.sadr.atlas.util.MessageUtil
 import dev.sadr.atlas.util.Utils
+import dev.sadr.atlas.core.engine.ProxyCore
+import dev.sadr.atlas.core.engine.ProxyCoreCallback
+import dev.sadr.atlas.core.engine.ProxyProcessFinder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import libv2ray.CoreCallbackHandler
-import libv2ray.CoreController
-import libv2ray.ProcessFinder
 import java.lang.ref.SoftReference
 import java.net.InetSocketAddress
 
 object CoreServiceManager {
 
-    private val coreController: CoreController by lazy { CoreNativeManager.newCoreController(CoreCallback()) }
+    private val coreController: ProxyCore by lazy { CoreNativeManager.createCore(CoreCallback()) }
     private val mMsgReceive = ReceiveMessageHandler()
     var currentConfig: ProfileItem? = null
     private var processFinder: XrayProcessFinder? = null
@@ -407,20 +407,20 @@ object CoreServiceManager {
      * Core callback handler implementation for handling V2Ray core events.
      * Handles startup, shutdown, socket protection, and status emission.
      */
-    private class CoreCallback : CoreCallbackHandler {
+    private class CoreCallback : ProxyCoreCallback {
         /**
-         * Called when V2Ray core starts up.
+         * Called when the core starts up.
          * @return 0 for success, any other value for failure.
          */
-        override fun startup(): Long {
+        override fun onStartup(): Long {
             return 0
         }
 
         /**
-         * Called when V2Ray core shuts down.
+         * Called when the core shuts down.
          * @return 0 for success, any other value for failure.
          */
-        override fun shutdown(): Long {
+        override fun onShutdown(): Long {
             val serviceControl = serviceControl?.get() ?: return -1
             return try {
                 serviceControl.stopService()
@@ -432,12 +432,12 @@ object CoreServiceManager {
         }
 
         /**
-         * Called when V2Ray core emits status information.
-         * @param l Status code.
-         * @param s Status message.
+         * Called when the core emits status information.
+         * @param code Status code.
+         * @param message Status message.
          * @return Always returns 0.
          */
-        override fun onEmitStatus(l: Long, s: String?): Long {
+        override fun onEmitStatus(code: Long, message: String?): Long {
             return 0
         }
     }
@@ -446,7 +446,7 @@ object CoreServiceManager {
      * Process finder implementation for Xray core.
      * Uses ConnectivityManager to find the owning UID of a connection based on network parameters.
      */
-    private class XrayProcessFinder(context: Context) : ProcessFinder {
+    private class XrayProcessFinder(context: Context) : ProxyProcessFinder {
         private val cm: ConnectivityManager? = context.getSystemService(ConnectivityManager::class.java)
 
         override fun findProcessByConnection(network: String, srcIP: String, srcPort: Long, destIP: String, destPort: Long): Long {
