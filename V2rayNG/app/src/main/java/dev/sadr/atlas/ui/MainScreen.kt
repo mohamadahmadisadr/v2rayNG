@@ -47,6 +47,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.sadr.atlas.BuildConfig
@@ -154,6 +155,15 @@ private fun HomeScreen(
     val downSpeed by mainViewModel.downSpeedFlow.collectAsStateWithLifecycle()
     val upSpeed by mainViewModel.upSpeedFlow.collectAsStateWithLifecycle()
 
+    // Scale the hero elements down on shorter/narrower screens so small phones
+    // get the same layout as the reference design (a tall Pixel) without the
+    // power button and spacing overflowing under the nav bar. 1f = design size.
+    val configuration = LocalConfiguration.current
+    val uiScale = minOf(
+        configuration.screenHeightDp / 780f,
+        configuration.screenWidthDp / 400f
+    ).coerceIn(0.75f, 1f)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -178,15 +188,16 @@ private fun HomeScreen(
             StatusPill(isRunning = isRunning, isLoading = isLoading)
         }
 
-        Spacer(modifier = Modifier.height(36.dp))
+        Spacer(modifier = Modifier.height(36.dp * uiScale))
 
         PowerButton(
             isRunning = isRunning,
             isLoading = isLoading,
+            scale = uiScale,
             onClick = onConnectClick
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(20.dp * uiScale))
 
         Text(
             text = when {
@@ -264,7 +275,7 @@ private fun HomeScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(28.dp * uiScale))
 
         SelectedServerCard(
             profile = selectedProfile,
@@ -315,6 +326,7 @@ private fun StatusPill(isRunning: Boolean, isLoading: Boolean) {
 private fun PowerButton(
     isRunning: Boolean,
     isLoading: Boolean,
+    scale: Float,
     onClick: () -> Unit
 ) {
     val infinite = rememberInfiniteTransition(label = "power")
@@ -338,11 +350,11 @@ private fun PowerButton(
         label = "glow"
     )
 
-    Box(modifier = Modifier.size(232.dp), contentAlignment = Alignment.Center) {
+    Box(modifier = Modifier.size(232.dp * scale), contentAlignment = Alignment.Center) {
         // Soft outer glow
         Box(
             modifier = Modifier
-                .size(212.dp)
+                .size(212.dp * scale)
                 .scale(if (isRunning || isLoading) pulse else 1f)
                 .clip(CircleShape)
                 .background(glowColor.copy(alpha = if (isRunning || isLoading) 0.16f else 0.08f))
@@ -350,7 +362,7 @@ private fun PowerButton(
 
         Box(
             modifier = Modifier
-                .size(168.dp)
+                .size(168.dp * scale)
                 .clip(CircleShape)
                 .background(
                     Brush.linearGradient(
@@ -376,7 +388,7 @@ private fun PowerButton(
             Icon(
                 imageVector = Icons.Rounded.PowerSettingsNew,
                 contentDescription = null,
-                modifier = Modifier.size(60.dp),
+                modifier = Modifier.size(60.dp * scale),
                 tint = if (isRunning || isLoading) Color.White
                 else MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -384,7 +396,7 @@ private fun PowerButton(
 
         if (isLoading) {
             CircularProgressIndicator(
-                modifier = Modifier.size(194.dp),
+                modifier = Modifier.size(194.dp * scale),
                 color = AccentBlue,
                 strokeWidth = 3.dp,
                 strokeCap = StrokeCap.Round
