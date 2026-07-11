@@ -88,6 +88,27 @@ object AppConfig {
     const val AUTO_BEST_CONFIG_URL = "https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/refs/heads/main/vless_configs.txt"
     const val AUTO_BEST_SUBSCRIPTION_ID = "auto_best"
 
+    /**
+     * Ordered list of Atlas Free-Config Broker `/free` endpoints. They are tried
+     * in order until one returns a usable body, so a single blocked hostname no
+     * longer breaks the Free feature. Front these with Cloudflare (multiple
+     * hostnames, short TTL); this list must mirror the broker's `fallback_domains`
+     * config. The trailing entry is the legacy direct public source, kept as an
+     * ultimate fallback until the broker is deployed — replace the placeholder
+     * broker hosts (`.example`, reserved TLD, fails fast) with real domains.
+     */
+    val FREE_BROKER_DOMAINS: List<String> = listOf(
+        "https://free1.atlasvpn.example/free",
+        "https://free2.atlasvpn.example/free",
+        AUTO_BEST_CONFIG_URL,
+    )
+
+    /**
+     * Auto-best connects to a RANDOM pick among the top-N lowest-latency healthy
+     * configs (not the single #1) to de-concentrate load across Atlas users.
+     */
+    const val AUTO_BEST_TOP_N = 5
+
     /** Cache keys. */
     const val CACHE_SUBSCRIPTION_ID = "cache_subscription_id"
 

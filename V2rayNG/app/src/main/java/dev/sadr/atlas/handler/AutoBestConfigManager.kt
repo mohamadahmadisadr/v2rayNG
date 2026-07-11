@@ -120,8 +120,10 @@ object AutoBestConfigManager {
                 }
 
                 // FULL DISCOVERY FLOW
+                // NOTE: we do NOT wipe the pool here. The old "last-known-good"
+                // list is kept until a fresh, non-empty fetch succeeds, so a
+                // blocked broker endpoint never empties the Free tab.
                 onProgress("Refreshing server list...")
-                MmkvManager.removeServerViaSubid(SUB_ID)
 
                 if (isEmulator()) {
                     onProgress("Emulator detected: results may differ")
@@ -129,21 +131,25 @@ object AutoBestConfigManager {
                 }
 
                 onProgress("Fetching configs...")
-                val allLines = mutableListOf<String>()
-                HttpUtil.streamUrlLines(UrlContentRequest(url = AppConfig.AUTO_BEST_CONFIG_URL, timeout = 30000)) { lines ->
-                    lines.forEach { line ->
-                        val trimmed = line.trim()
-                        if (trimmed.isNotBlank()) allLines.add(trimmed)
-                        if (allLines.size >= 25000) return@forEach
-                    }
-                }
+                val allLines = fetchFreePoolWithFallback(onProgress)
 
                 if (allLines.isEmpty()) {
-                    onProgress("No configs found or network error")
-                    onComplete(emptyList())
+                    // Fetch failed / all domains blocked: keep the existing pool.
+                    val existing = MmkvManager.decodeServerList(SUB_ID)
+                    if (existing.isNotEmpty()) {
+                        onProgress("Offline: showing last saved servers")
+                    } else {
+                        onProgress("No configs found or network error")
+                    }
+                    withContext(Dispatchers.Main) {
+                        onComplete(existing)
+                    }
                     return@launch
                 }
-                
+
+                // Fresh list in hand — now it is safe to replace the pool.
+                MmkvManager.removeServerViaSubid(SUB_ID)
+
                 stats.total = allLines.size
                 onProgress("Fetched ${allLines.size} configs. Deduping...")
                 
@@ -320,14 +326,18 @@ object AutoBestConfigManager {
                 }
 
                 val bestResults = mutableListOf<Pair<ProfileItem, Long>>()
-                
-                // Collector with early exit
+
+                // Collector: gather up to TOP_N fast (<3000ms) results before
+                // exiting, so the winner can be chosen RANDOMLY among the top-N
+                // rather than always the single #1 (de-concentrates user load). If
+                // fewer than TOP_N fast configs exist, the channel is exhausted and
+                // closed by the waiter below.
+                val fastResults = AtomicInteger(0)
                 val collectorJob = launch {
                     try {
                         for (result in resultChannel) {
                             bestResults.add(result)
-                            if (result.second < 3000) {
-                                // FOUND WINNER
+                            if (result.second < 3000 && fastResults.incrementAndGet() >= AppConfig.AUTO_BEST_TOP_N) {
                                 resultChannel.close()
                                 break
                             }
@@ -360,9 +370,13 @@ object AutoBestConfigManager {
                 
                 if (bestResults.isNotEmpty()) {
                     val finalBest = bestResults.sortedBy { it.second }
-                    val winner = finalBest.first().first
-                    val latency = finalBest.first().second
-                    
+
+                    // Pick the winner RANDOMLY among the top-N lowest-latency
+                    // configs (not always #1) so Atlas users spread across servers
+                    // instead of all piling onto the single fastest one.
+                    val topN = finalBest.take(minOf(AppConfig.AUTO_BEST_TOP_N, finalBest.size))
+                    val (winner, latency) = topN.random()
+
                     stats.success = bestResults.size
                     LogUtil.i(AppConfig.TAG, stats.getSummary())
 
@@ -375,10 +389,12 @@ object AutoBestConfigManager {
                     ))
 
                     onProgress("Connected")
-                    
-                    val finalGuids = finalBest.take(TARGET_COUNT).map { (profile, _) ->
-                        profile.guid
-                    }
+
+                    // Return the randomly chosen winner FIRST (the caller connects
+                    // bestGuids.first()), followed by the other top configs.
+                    val finalGuids = (listOf(winner.guid) + finalBest.take(TARGET_COUNT).map { it.first.guid })
+                        .distinct()
+                        .take(TARGET_COUNT)
                     withContext(Dispatchers.Main) {
                         onComplete(finalGuids)
                     }
@@ -398,6 +414,40 @@ object AutoBestConfigManager {
                 onProgress("Error: ${e.message}")
             }
         }
+    }
+
+    /**
+     * Fetches the Free pool from the broker, trying each domain in
+     * [AppConfig.FREE_BROKER_DOMAINS] in order until one returns usable configs.
+     * The broker serves the v2rayNG subscription format (base64 of newline-joined
+     * URIs); the legacy public source is plaintext — so we try base64-decoding the
+     * body and fall back to raw. Returns an empty list only if every domain fails,
+     * which the caller treats as "keep the last-known-good pool".
+     */
+    private fun fetchFreePoolWithFallback(onProgress: (String) -> Unit): List<String> {
+        for ((index, url) in AppConfig.FREE_BROKER_DOMAINS.withIndex()) {
+            val body = try {
+                HttpUtil.getUrlContentWithUserAgent(UrlContentRequest(url = url, timeout = 20000))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            if (body.isNullOrBlank()) continue
+
+            val text = Utils.tryDecodeBase64(body.trim()) ?: body
+            val lines = text.lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotBlank() && it.contains("://") }
+                .take(25000)
+                .toList()
+
+            if (lines.isNotEmpty()) {
+                if (index > 0) onProgress("Using fallback source ${index + 1}")
+                return lines
+            }
+        }
+        return emptyList()
     }
 
     private fun updateProgress(
