@@ -159,6 +159,28 @@ fun ConfigsScreen(
             Spacer(modifier = Modifier.height(4.dp))
         }
 
+        // Data used / expiry for the selected subscription (from its
+        // `subscription-userinfo` header). Only real subscriptions carry this;
+        // synthetic groups ("My Configs", "Free") decode to null.
+        val selectedSub = remember(currentSubId, servers) {
+            if (currentSubId.isNotEmpty()) MmkvManager.decodeSubscription(currentSubId) else null
+        }
+        if (selectedSub != null && selectedSub.hasUsageInfo()) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                SubscriptionUsageContent(
+                    item = selectedSub,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                )
+            }
+        }
+
         if (servers.isEmpty()) {
             EmptyConfigsState(onMenuClick = onMenuClick, onImportClick = onImportClick)
         } else {

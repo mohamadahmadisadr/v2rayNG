@@ -57,7 +57,6 @@ import androidx.lifecycle.lifecycleScope
 import dev.sadr.atlas.AppConfig
 import dev.sadr.atlas.R
 import dev.sadr.atlas.dto.entities.SubscriptionCache
-import dev.sadr.atlas.extension.toTrafficString
 import dev.sadr.atlas.extension.toast
 import dev.sadr.atlas.handler.AngConfigManager
 import dev.sadr.atlas.handler.MmkvManager
@@ -71,9 +70,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class SubSettingActivity : BaseActivity() {
     private val viewModel: SubscriptionsViewModel by viewModels()
@@ -346,77 +342,10 @@ private fun SubscriptionCard(
                 }
             }
         }
-        SubscriptionUsage(subscription.subscription)
+        SubscriptionUsageContent(
+            item = subscription.subscription,
+            modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp)
+        )
       }
-    }
-}
-
-/**
- * Shows the data used and expiry reported by the server's `subscription-userinfo`
- * header. Renders nothing when the server didn't report any usage info.
- */
-@Composable
-private fun SubscriptionUsage(item: dev.sadr.atlas.dto.entities.SubscriptionItem) {
-    val hasUsage = item.download >= 0 || item.upload >= 0 || item.total >= 0
-    val hasExpiry = item.expire >= 0
-    if (!hasUsage && !hasExpiry) return
-
-    val used = (item.upload.coerceAtLeast(0)) + (item.download.coerceAtLeast(0))
-    val total = item.total
-    val usedText = when {
-        total > 0 -> "${used.toTrafficString()} / ${total.toTrafficString()}"
-        hasUsage -> "${used.toTrafficString()} used"
-        else -> null
-    }
-    val progress = if (total > 0) (used.toFloat() / total.toFloat()).coerceIn(0f, 1f) else null
-
-    val expiryText = when {
-        !hasExpiry -> null
-        item.expire == 0L -> "Never expires"
-        else -> {
-            val now = System.currentTimeMillis() / 1000L
-            val date = remember(item.expire) {
-                SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(item.expire * 1000L))
-            }
-            if (item.expire <= now) "Expired" else "Expires $date"
-        }
-    }
-
-    Column(
-        modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp)
-    ) {
-        if (progress != null) {
-            androidx.compose.material3.LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(CircleShape),
-                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (usedText != null) {
-                Text(
-                    text = usedText,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (expiryText != null) {
-                val expired = expiryText == "Expired"
-                Text(
-                    text = expiryText,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (expired) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
     }
 }
