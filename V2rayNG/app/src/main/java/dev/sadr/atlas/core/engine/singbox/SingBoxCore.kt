@@ -7,26 +7,28 @@ import dev.sadr.atlas.core.engine.ProxyProcessFinder
 import libsingbox.CoreCallbackHandler
 import libsingbox.CoreController
 import java.net.HttpURLConnection
+import java.net.InetSocketAddress
+import java.net.Proxy
 import java.net.URL
-import java.net.URLEncoder
 
 /**
  * [ProxyCore] adapter over the sing-box gomobile `CoreController` (package `libsingbox`).
  *
- * Delay measurement uses sing-box's own clash_api URLTest endpoint (measured in-core, like
- * xray's measureDelay), reached via the local clash controller port parsed from the config at
- * [startLoop] time. This avoids the overhead of proxying a full external request.
+ * Delay measurement proxies a request through the local SOCKS inbound (port parsed from the
+ * config at [startLoop] time). It does two attempts over a kept-alive connection and returns
+ * the faster one — the first warms the proxied connection, the second reflects steady-state
+ * latency — matching xray's measureDelay (min of attempts) so the numbers are comparable.
  */
 internal class SingBoxCore(private val controller: CoreController) : ProxyCore {
 
     @Volatile
-    private var clashPort: Int = 0
+    private var socksPort: Int = 0
 
     override val isRunning: Boolean
         get() = controller.isRunning
 
     override fun startLoop(config: String, tunFd: Int) {
-        clashPort = parseClashPort(config)
+        socksPort = parseSocksPort(config)
         controller.startLoop(config, tunFd)
     }
 
@@ -35,25 +37,29 @@ internal class SingBoxCore(private val controller: CoreController) : ProxyCore {
     }
 
     override fun measureDelay(url: String): Long {
-        val port = clashPort
+        val port = socksPort
         if (port <= 0) return -1L
-        var conn: HttpURLConnection? = null
-        return try {
-            val encoded = URLEncoder.encode(url, "UTF-8")
-            val api = URL("http://127.0.0.1:$port/proxies/${SingBoxConfigBuilder.PROXY_TAG}/delay?timeout=5000&url=$encoded")
-            conn = (api.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 2000
-                readTimeout = 8000
-                requestMethod = "GET"
+        val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", port))
+        var best = -1L
+        repeat(2) {
+            try {
+                val conn = (URL(url).openConnection(proxy) as HttpURLConnection).apply {
+                    connectTimeout = 3000
+                    readTimeout = 5000
+                    instanceFollowRedirects = false
+                    setRequestProperty("Connection", "keep-alive")
+                }
+                val start = System.currentTimeMillis()
+                val code = conn.responseCode
+                // Drain (don't disconnect) so the socket returns to the keep-alive pool and the
+                // second attempt reuses the already-established proxied connection.
+                conn.inputStream.use { it.readBytes() }
+                val elapsed = System.currentTimeMillis() - start
+                if (code in 200..399 && (best < 0 || elapsed < best)) best = elapsed
+            } catch (_: Exception) {
             }
-            if (conn.responseCode != 200) return -1L
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
-            JsonParser.parseString(body).asJsonObject.get("delay").asLong
-        } catch (_: Exception) {
-            -1L
-        } finally {
-            conn?.disconnect()
         }
+        return best
     }
 
     override fun queryAllOutboundTrafficStats(): String =
@@ -63,14 +69,16 @@ internal class SingBoxCore(private val controller: CoreController) : ProxyCore {
         // Process-based routing isn't wired in the sing-box wrapper for phase 1; no-op.
     }
 
-    /** Extracts the clash_api controller port from `experimental.clash_api.external_controller`. */
-    private fun parseClashPort(config: String): Int {
+    /** Extracts the first inbound `listen_port` from the sing-box config, or 0 if absent. */
+    private fun parseSocksPort(config: String): Int {
         return try {
-            val controllerAddr = JsonParser.parseString(config).asJsonObject
-                .getAsJsonObject("experimental")
-                ?.getAsJsonObject("clash_api")
-                ?.get("external_controller")?.asString ?: return 0
-            controllerAddr.substringAfterLast(':').toIntOrNull() ?: 0
+            val inbounds = JsonParser.parseString(config).asJsonObject
+                .getAsJsonArray("inbounds") ?: return 0
+            for (element in inbounds) {
+                val obj = element.asJsonObject
+                if (obj.has("listen_port")) return obj.get("listen_port").asInt
+            }
+            0
         } catch (_: Exception) {
             0
         }

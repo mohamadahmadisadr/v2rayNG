@@ -8,6 +8,7 @@ import dev.sadr.atlas.core.CoreNativeManager
 import dev.sadr.atlas.dto.IPAPIInfo
 import dev.sadr.atlas.dto.UrlContentRequest
 import dev.sadr.atlas.dto.entities.ProfileItem
+import dev.sadr.atlas.dto.entities.ServerAffiliationInfo
 import dev.sadr.atlas.enums.EConfigType
 import dev.sadr.atlas.extension.isComplexType
 import dev.sadr.atlas.extension.isNotNullEmpty
@@ -255,7 +256,13 @@ object SpeedtestManager {
 
         val configResult = ProxyConfigManager.getSpeedtestConfig(context, profileItem, 10900 + workerId)
         if (!configResult.status) {
-            return retFailure
+            // Engine can't run this profile (e.g. an xray-only protocol under sing-box):
+            // surface a distinct "N/A" rather than a misleading "timeout".
+            return if (configResult.errorMessage.startsWith("sing-box:")) {
+                ServerAffiliationInfo.UNSUPPORTED
+            } else {
+                retFailure
+            }
         }
         
         val url1 = SettingsManager.getDelayTestUrl()
@@ -275,7 +282,13 @@ object SpeedtestManager {
 
         val configResult = ProxyConfigManager.getSpeedtestConfig(context, profileItem, 10900 + workerId)
         if (!configResult.status) {
-            return retFailure
+            // Engine can't run this profile (e.g. an xray-only protocol under sing-box):
+            // surface a distinct "N/A" rather than a misleading "timeout".
+            return if (configResult.errorMessage.startsWith("sing-box:")) {
+                ServerAffiliationInfo.UNSUPPORTED
+            } else {
+                retFailure
+            }
         }
         
         return CoreNativeManager.measureOutboundDelay(configResult.content, testUrl, workerId)
@@ -300,7 +313,13 @@ object SpeedtestManager {
 
         val configResult = ProxyConfigManager.getSpeedtestConfig(context, guid, 10900 + workerId)
         if (!configResult.status) {
-            return retFailure
+            // Engine can't run this profile (e.g. an xray-only protocol under sing-box):
+            // surface a distinct "N/A" rather than a misleading "timeout".
+            return if (configResult.errorMessage.startsWith("sing-box:")) {
+                ServerAffiliationInfo.UNSUPPORTED
+            } else {
+                retFailure
+            }
         }
         val url1 = SettingsManager.getDelayTestUrl()
         var delay = CoreNativeManager.measureOutboundDelay(configResult.content, url1, workerId)
