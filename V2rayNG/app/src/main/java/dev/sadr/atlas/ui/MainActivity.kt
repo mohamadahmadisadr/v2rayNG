@@ -122,7 +122,7 @@ class MainActivity : HelperBaseActivity() {
                     isRunning = isRunning,
                     groups = groups,
                     tabIndex = mainTabIndex.intValue,
-                    onTabChange = { mainTabIndex.intValue = it },
+                    onTabChange = { onMainTabChange(it) },
                     onConnectClick = { handleConnectAction() },
                     onAutoBestClick = { handleAutoBestAction() },
                     onMenuClick = { id -> handleMenuClick(id) },
@@ -446,6 +446,24 @@ class MainActivity : HelperBaseActivity() {
             LogUtil.e(AppConfig.TAG, "VpnService.prepare failed", e)
             toastError("System VPN error: ${e.message}")
             false
+        }
+    }
+
+    /**
+     * Handles bottom-nav tab switches. When "Auto ping on start" is enabled we also
+     * re-run a ping of all configs whenever the user lands on a ping-relevant tab
+     * (Home = 0, Configs = 1), so the selected-config ping on the home card and the
+     * per-config pings on the list stay fresh without manually re-selecting.
+     */
+    private fun onMainTabChange(index: Int) {
+        val previous = mainTabIndex.intValue
+        mainTabIndex.intValue = index
+        if (index == previous || index > 1) return
+
+        if (mmkvManager.decodeSettingsBool(AppConfig.PREF_AUTO_PING_ON_START, true)
+            && !mainViewModel.isLoadingFlow.value
+        ) {
+            mainViewModel.testAllRealPing()
         }
     }
 
