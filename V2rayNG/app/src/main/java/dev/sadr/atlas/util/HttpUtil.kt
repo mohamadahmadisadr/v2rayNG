@@ -5,8 +5,11 @@ import dev.sadr.atlas.AppConfig.LOOPBACK
 import dev.sadr.atlas.BuildConfig
 import dev.sadr.atlas.dto.UrlContentRequest
 import okhttp3.Credentials
+import okhttp3.Dns
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.dnsoverhttps.DnsOverHttps
 import java.io.File
 import java.io.IOException
 import java.net.IDN
@@ -20,6 +23,47 @@ import java.net.URL
 import java.util.concurrent.TimeUnit
 
 object HttpUtil {
+
+    /**
+     * DNS-over-HTTPS resolver (Cloudflare) with a system-DNS fallback. Used for the
+     * Free-config broker fetch so an ISP DNS-layer block of the broker domain does
+     * not prevent resolving it. The DoH server's own IPs are hardcoded (literal IPs
+     * parse without any DNS lookup), so bootstrap needs no system resolver either.
+     * If DoH itself fails (e.g. the resolver is blocked), we fall back to system DNS
+     * to preserve availability.
+     */
+    private val dohDns: Dns by lazy {
+        val doh = DnsOverHttps.Builder()
+            .client(OkHttpClient.Builder().build())
+            .url("https://cloudflare-dns.com/dns-query".toHttpUrl())
+            .bootstrapDnsHosts(
+                InetAddress.getByName("1.1.1.1"),
+                InetAddress.getByName("1.0.0.1"),
+                InetAddress.getByName("2606:4700:4700::1111"),
+                InetAddress.getByName("2606:4700:4700::1001"),
+            )
+            .build()
+        Dns { hostname ->
+            // Literal IPs and already-resolved hosts shouldn't hit DoH.
+            if (isLiteralIp(hostname)) return@Dns Dns.SYSTEM.lookup(hostname)
+            try {
+                val r = doh.lookup(hostname)
+                if (r.isNotEmpty()) {
+                    LogUtil.i(AppConfig.TAG, "DoH resolved $hostname -> ${r.size} addr")
+                    r
+                } else {
+                    LogUtil.w(AppConfig.TAG, "DoH empty for $hostname, using system DNS")
+                    Dns.SYSTEM.lookup(hostname)
+                }
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "DoH failed for $hostname (${e.message}), using system DNS")
+                Dns.SYSTEM.lookup(hostname)
+            }
+        }
+    }
+
+    private fun isLiteralIp(host: String): Boolean =
+        host.isNotEmpty() && (host[0].isDigit() || host.contains(':'))
 
     /**
      * Converts the domain part of a URL string to its IDN (Punycode, ASCII Compatible Encoding) format.
@@ -172,14 +216,14 @@ object HttpUtil {
      * @throws IOException If an I/O error occurs.
      */
     @Throws(IOException::class)
-    fun getUrlContentWithUserAgent(request: UrlContentRequest, headersOut: MutableMap<String, String>? = null): String {
+    fun getUrlContentWithUserAgent(request: UrlContentRequest, headersOut: MutableMap<String, String>? = null, useDoh: Boolean = false): String {
         var currentUrl = request.url
         var redirects = 0
         val maxRedirects = 3
 
         while (redirects++ < maxRedirects) {
             if (currentUrl == null) continue
-            val client = buildOkHttpClient(request.timeout, request.httpPort, request.proxyUsername, request.proxyPassword, followRedirects = false)
+            val client = buildOkHttpClient(request.timeout, request.httpPort, request.proxyUsername, request.proxyPassword, followRedirects = false, useDoh = useDoh)
             val finalUserAgent = if (request.userAgent.isNullOrBlank()) {
                 "AtlasVPN/${BuildConfig.VERSION_NAME}"
             } else {
@@ -246,13 +290,20 @@ object HttpUtil {
         httpPort: Int,
         proxyUsername: String?,
         proxyPassword: String?,
-        followRedirects: Boolean
+        followRedirects: Boolean,
+        useDoh: Boolean = false
     ): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .connectTimeout(timeout.toLong(), TimeUnit.MILLISECONDS)
             .readTimeout(timeout.toLong(), TimeUnit.MILLISECONDS)
             .followRedirects(followRedirects)
             .followSslRedirects(followRedirects)
+
+        // DoH only matters for direct connections; when going through a local proxy
+        // the proxy resolves the hostname, so OkHttp's Dns is not consulted anyway.
+        if (useDoh && httpPort == 0) {
+            builder.dns(dohDns)
+        }
 
         if (httpPort != 0) {
             builder.proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress(LOOPBACK, httpPort)))

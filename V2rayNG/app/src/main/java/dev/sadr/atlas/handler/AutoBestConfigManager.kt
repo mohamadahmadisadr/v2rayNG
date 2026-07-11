@@ -435,7 +435,9 @@ object AutoBestConfigManager {
 
         for ((index, url) in urls.withIndex()) {
             val body = try {
-                HttpUtil.getUrlContentWithUserAgent(UrlContentRequest(url = url, timeout = 20000))
+                // useDoh: resolve the broker domain over DNS-over-HTTPS so an ISP
+                // DNS-layer block of the endpoint doesn't break the Free feature.
+                HttpUtil.getUrlContentWithUserAgent(UrlContentRequest(url = url, timeout = 20000), useDoh = true)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
