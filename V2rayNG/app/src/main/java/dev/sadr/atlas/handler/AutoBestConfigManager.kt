@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import dev.sadr.atlas.AppConfig
 import dev.sadr.atlas.core.CoreConfigManager
+import dev.sadr.atlas.core.ProxyConfigManager
 import dev.sadr.atlas.core.CoreNativeManager
 import dev.sadr.atlas.dto.LastWorkingConfig
 import dev.sadr.atlas.dto.ParseStats
@@ -275,7 +276,7 @@ object AutoBestConfigManager {
                                 profile.insecure = true
                                 if (profile.fingerPrint.isNullOrBlank()) profile.fingerPrint = "chrome"
 
-                                val configResult = CoreConfigManager.getV2rayConfig4Speedtest(context, profile, 10810 + workerId)
+                                val configResult = ProxyConfigManager.getSpeedtestConfig(context, profile, 10810 + workerId)
                                 if (!configResult.status) {
                                     continue
                                 }

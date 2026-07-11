@@ -3,6 +3,7 @@ package dev.sadr.atlas.handler
 import android.content.Context
 import dev.sadr.atlas.AppConfig
 import dev.sadr.atlas.core.CoreConfigManager
+import dev.sadr.atlas.core.ProxyConfigManager
 import dev.sadr.atlas.core.CoreNativeManager
 import dev.sadr.atlas.dto.IPAPIInfo
 import dev.sadr.atlas.dto.UrlContentRequest
@@ -252,7 +253,7 @@ object SpeedtestManager {
             }
         }
 
-        val configResult = CoreConfigManager.getV2rayConfig4Speedtest(context, profileItem, 10900 + workerId)
+        val configResult = ProxyConfigManager.getSpeedtestConfig(context, profileItem, 10900 + workerId)
         if (!configResult.status) {
             return retFailure
         }
@@ -272,7 +273,7 @@ object SpeedtestManager {
     suspend fun startRealPingWithUrl(context: Context, profileItem: ProfileItem, testUrl: String, timeoutMs: Int, workerId: Int = 0): Long {
         val retFailure = -1L
 
-        val configResult = CoreConfigManager.getV2rayConfig4Speedtest(context, profileItem, 10900 + workerId)
+        val configResult = ProxyConfigManager.getSpeedtestConfig(context, profileItem, 10900 + workerId)
         if (!configResult.status) {
             return retFailure
         }
@@ -297,7 +298,7 @@ object SpeedtestManager {
             }
         }
 
-        val configResult = CoreConfigManager.getV2rayConfig4Speedtest(context, guid, 10900 + workerId)
+        val configResult = ProxyConfigManager.getSpeedtestConfig(context, guid, 10900 + workerId)
         if (!configResult.status) {
             return retFailure
         }

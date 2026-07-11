@@ -132,6 +132,16 @@
         <item>debug</item>
     </string-array>
 
+    <string-array name="proxy_engine_entries" translatable="false">
+        <item>Xray (default)</item>
+        <item>sing-box (experimental)</item>
+    </string-array>
+
+    <string-array name="proxy_engine_values" translatable="false">
+        <item>xray</item>
+        <item>singbox</item>
+    </string-array>
+
     <string-array name="flows" translatable="false">
         <item />
         <item>xtls-rprx-vision</item>

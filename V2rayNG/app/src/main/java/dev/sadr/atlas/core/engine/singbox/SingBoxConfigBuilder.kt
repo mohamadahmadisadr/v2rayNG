@@ -61,24 +61,6 @@ object SingBoxConfigBuilder {
         return SingBoxConfigResult.Success(JsonUtil.toJson(root))
     }
 
-    /**
-     * Minimal config for delay measurement: just the proxy outbound. The wrapper's MeasureDelay
-     * dials the test URL through the [PROXY_TAG] outbound, so no inbound is required.
-     */
-    fun buildForSpeedtest(profile: ProfileItem, logLevel: String = "warn"): SingBoxConfigResult {
-        val outbound = when (val r = SingBoxOutboundBuilder.build(profile, PROXY_TAG)) {
-            is SingBoxOutboundResult.Success -> r.outbound
-            is SingBoxOutboundResult.Unsupported -> return SingBoxConfigResult.Unsupported(r.reason)
-        }
-
-        val root = JsonObject()
-        root.add("log", logBlock(logLevel))
-        root.add("outbounds", JsonArray().apply { add(outbound) })
-        root.add("route", JsonObject().apply { addProperty("final", PROXY_TAG) })
-
-        return SingBoxConfigResult.Success(JsonUtil.toJson(root))
-    }
-
     private fun logBlock(level: String): JsonObject = JsonObject().apply {
         addProperty("level", level)
         addProperty("timestamp", false)
