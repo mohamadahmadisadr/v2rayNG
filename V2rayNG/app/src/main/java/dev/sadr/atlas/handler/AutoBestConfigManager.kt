@@ -433,17 +433,24 @@ object AutoBestConfigManager {
             AppConfig.FREE_BROKER_DOMAINS
         }
 
+        LogUtil.w(AppConfig.TAG, "Free fetch: ${urls.size} source(s), custom=${if (custom.isNullOrBlank()) "none" else custom}")
         for ((index, url) in urls.withIndex()) {
+            LogUtil.w(AppConfig.TAG, "Free fetch: trying [${index + 1}/${urls.size}] $url")
             val body = try {
                 // useDoh: resolve the broker domain over DNS-over-HTTPS so an ISP
                 // DNS-layer block of the endpoint doesn't break the Free feature.
                 HttpUtil.getUrlContentWithUserAgent(UrlContentRequest(url = url, timeout = 20000), useDoh = true)
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "Free fetch: FAILED $url -> ${e.javaClass.simpleName}: ${e.message}")
                 null
             }
-            if (body.isNullOrBlank()) continue
+            if (body.isNullOrBlank()) {
+                LogUtil.w(AppConfig.TAG, "Free fetch: empty/blank body from $url")
+                continue
+            }
+            LogUtil.w(AppConfig.TAG, "Free fetch: got ${body.length} bytes from $url")
 
             // The broker serves base64; the legacy public source is plaintext. A
             // base64 body never contains "://", while config lines always do — use
