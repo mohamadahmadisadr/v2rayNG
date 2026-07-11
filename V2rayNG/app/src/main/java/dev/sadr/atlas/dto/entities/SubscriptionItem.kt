@@ -13,5 +13,12 @@ data class SubscriptionItem(
     var filter: String? = null,
     var allowInsecureUrl: Boolean = false,
     var userAgent: String? = null,
+    // Usage/quota reported by the server's `subscription-userinfo` header
+    // (SIP008 / Clash convention). All in bytes except [expire] (unix seconds).
+    // 0 for total/expire means unlimited / never; -1 means "not reported".
+    var upload: Long = -1,
+    var download: Long = -1,
+    var total: Long = -1,
+    var expire: Long = -1,
 )
 

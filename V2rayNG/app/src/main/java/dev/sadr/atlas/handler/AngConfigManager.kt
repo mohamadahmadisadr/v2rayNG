@@ -603,6 +603,7 @@ object AngConfigManager {
                         it.subscription.remarks = name
                     }
                 }
+                applySubscriptionUserInfo(responseHeaders, it.subscription)
                 it.subscription.lastUpdated = System.currentTimeMillis()
                 MmkvManager.encodeSubscription(it.guid, it.subscription)
                 LogUtil.i(AppConfig.TAG, "Subscription updated: ${it.subscription.remarks}, $count configs")
@@ -668,6 +669,30 @@ object AngConfigManager {
             if (title.isNotBlank()) return title
         }
         return runCatching { URI(Utils.fixIllegalUrl(url)).host }.getOrNull()
+    }
+
+    /**
+     * Parses the server's `subscription-userinfo` response header (SIP008 / Clash
+     * convention, e.g. `upload=0; download=2104899007; total=0; expire=0`) and stores
+     * the reported usage/quota on the subscription so the UI can show data used and
+     * expiry. Missing keys are left at -1 ("not reported").
+     */
+    private fun applySubscriptionUserInfo(headers: Map<String, String>, sub: SubscriptionItem) {
+        val raw = headers["subscription-userinfo"]?.trim().orEmpty()
+        if (raw.isEmpty()) return
+        val values = raw.split(';')
+            .mapNotNull { part ->
+                val idx = part.indexOf('=')
+                if (idx <= 0) return@mapNotNull null
+                val key = part.substring(0, idx).trim().lowercase()
+                val value = part.substring(idx + 1).trim().toLongOrNull() ?: return@mapNotNull null
+                key to value
+            }
+            .toMap()
+        values["upload"]?.let { sub.upload = it }
+        values["download"]?.let { sub.download = it }
+        values["total"]?.let { sub.total = it }
+        values["expire"]?.let { sub.expire = it }
     }
 
     private fun importUrlAsSubscription(url: String): Int {
