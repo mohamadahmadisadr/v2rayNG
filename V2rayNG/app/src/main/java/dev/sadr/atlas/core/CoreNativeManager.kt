@@ -2,9 +2,11 @@ package dev.sadr.atlas.core
 
 import android.content.Context
 import dev.sadr.atlas.AppConfig
+import dev.sadr.atlas.core.engine.EngineType
 import dev.sadr.atlas.core.engine.ProxyCore
 import dev.sadr.atlas.core.engine.ProxyCoreCallback
 import dev.sadr.atlas.core.engine.ProxyCoreEngine
+import dev.sadr.atlas.core.engine.singbox.SingBoxCoreEngine
 import dev.sadr.atlas.core.engine.xray.XrayCoreEngine
 import dev.sadr.atlas.util.LogUtil
 import kotlinx.coroutines.sync.Mutex
@@ -28,6 +30,10 @@ object CoreNativeManager {
      * Defaults to [XrayCoreEngine].
      */
     var engine: ProxyCoreEngine = XrayCoreEngine
+
+    /** The type of the currently-active [engine], for callers that must build engine-native configs. */
+    val activeEngineType: EngineType
+        get() = if (engine === SingBoxCoreEngine) EngineType.SINGBOX else EngineType.XRAY
 
     /**
      * Callback for internal test/ping cores — they don't need lifecycle notifications.

@@ -31,9 +31,13 @@ import dev.sadr.atlas.service.IDialerService
 import dev.sadr.atlas.util.LogUtil
 import dev.sadr.atlas.util.MessageUtil
 import dev.sadr.atlas.util.Utils
+import dev.sadr.atlas.core.engine.EngineType
 import dev.sadr.atlas.core.engine.ProxyCore
 import dev.sadr.atlas.core.engine.ProxyCoreCallback
 import dev.sadr.atlas.core.engine.ProxyProcessFinder
+import dev.sadr.atlas.core.engine.singbox.SingBoxConfigBuilder
+import dev.sadr.atlas.core.engine.singbox.SingBoxConfigResult
+import dev.sadr.atlas.dto.ConfigResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -234,7 +238,19 @@ object CoreServiceManager {
         val config = MmkvManager.decodeServerConfig(guid) ?: error("Failed to decode server config")
 
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Starting core loop for ${config.remarks}")
-        val result = CoreConfigManager.getV2rayConfig(service, guid)
+        val result = if (CoreNativeManager.activeEngineType == EngineType.SINGBOX) {
+            // sing-box phase 1 rides on the hev tunnel (SOCKS bridge); it needs hev enabled.
+            if (!SettingsManager.isUsingHevTun()) {
+                error("sing-box engine currently requires hev tun mode to be enabled")
+            }
+            when (val r = SingBoxConfigBuilder.build(config, SettingsManager.getSocksPort())) {
+                is SingBoxConfigResult.Success -> ConfigResult(status = true, guid = guid, content = r.json)
+                is SingBoxConfigResult.Unsupported ->
+                    ConfigResult(status = false, guid = guid, errorMessage = "sing-box: ${r.reason}")
+            }
+        } else {
+            CoreConfigManager.getV2rayConfig(service, guid)
+        }
         LogUtil.d(AppConfig.TAG, result.content)
         if (!result.status) {
             error(result.errorMessage.ifBlank { "Failed to get V2Ray config" })
