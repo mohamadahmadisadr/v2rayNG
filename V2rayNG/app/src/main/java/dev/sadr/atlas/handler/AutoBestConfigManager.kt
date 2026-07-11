@@ -445,7 +445,12 @@ object AutoBestConfigManager {
             }
             if (body.isNullOrBlank()) continue
 
-            val text = Utils.tryDecodeBase64(body.trim()) ?: body
+            // The broker serves base64; the legacy public source is plaintext. A
+            // base64 body never contains "://", while config lines always do — use
+            // that to pick the path, so we don't hand plaintext to the base64
+            // decoder (which logs noisy "bad base-64" errors before failing).
+            val trimmed = body.trim()
+            val text = if (trimmed.contains("://")) trimmed else (Utils.tryDecodeBase64(trimmed) ?: trimmed)
             val lines = text.lineSequence()
                 .map { it.trim() }
                 .filter { it.isNotBlank() && it.contains("://") }
