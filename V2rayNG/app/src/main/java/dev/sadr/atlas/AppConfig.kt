@@ -89,13 +89,22 @@ object AppConfig {
     const val AUTO_BEST_SUBSCRIPTION_ID = "auto_best"
 
     /**
-     * Ordered list of Atlas Free-Config Broker `/free` endpoints. They are tried
-     * in order until one returns a usable body, so a single blocked hostname no
-     * longer breaks the Free feature. Front these with Cloudflare (multiple
+     * Runtime override for the broker endpoint, editable in Settings ("Free
+     * servers" → Broker URL) with NO rebuild. When set, it is tried first; the
+     * built-in [FREE_BROKER_DOMAINS] are kept as fallbacks. Blank => defaults only.
+     * Examples: `http://10.0.2.2:8080/free` (emulator) or `https://your-domain/free`.
+     */
+    const val PREF_FREE_BROKER_URL = "pref_free_broker_url"
+
+    /**
+     * Ordered list of default Atlas Free-Config Broker `/free` endpoints. They are
+     * tried in order until one returns a usable body, so a single blocked hostname
+     * no longer breaks the Free feature. Front these with Cloudflare (multiple
      * hostnames, short TTL); this list must mirror the broker's `fallback_domains`
      * config. The trailing entry is the legacy direct public source, kept as an
      * ultimate fallback until the broker is deployed — replace the placeholder
-     * broker hosts (`.example`, reserved TLD, fails fast) with real domains.
+     * broker hosts (`.example`, reserved TLD, fails fast) with real domains, or
+     * just set the Broker URL in Settings.
      */
     val FREE_BROKER_DOMAINS: List<String> = listOf(
         "https://free1.atlasvpn.example/free",

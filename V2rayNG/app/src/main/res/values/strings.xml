@@ -287,6 +287,9 @@
     <string name="title_mode_help">Click me for more help</string>
     <string name="title_language">Language</string>
     <string name="title_ui_settings">UI settings</string>
+    <string name="title_free_servers">Free servers</string>
+    <string name="title_pref_free_broker_url">Broker URL</string>
+    <string name="summary_pref_free_broker_url">Where the Free servers list is fetched from. Leave empty to use the built-in default. Examples: http://10.0.2.2:8080/free (emulator) or https://your-domain/free</string>
     <string name="title_pref_ui_mode_night">UI mode settings</string>
     <string name="title_pref_use_hev_tunnel">Enable Hev TUN Feature</string>
     <string name="summary_pref_use_hev_tunnel">When enabled, TUN will use hev-socks5-tunnel; otherwise, it will use xray-core.</string>

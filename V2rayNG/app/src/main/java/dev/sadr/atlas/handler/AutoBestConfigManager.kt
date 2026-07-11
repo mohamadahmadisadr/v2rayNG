@@ -425,7 +425,15 @@ object AutoBestConfigManager {
      * which the caller treats as "keep the last-known-good pool".
      */
     private fun fetchFreePoolWithFallback(onProgress: (String) -> Unit): List<String> {
-        for ((index, url) in AppConfig.FREE_BROKER_DOMAINS.withIndex()) {
+        // Settings override (if any) is tried first, then the built-in defaults.
+        val custom = MmkvManager.decodeSettingsString(AppConfig.PREF_FREE_BROKER_URL)?.trim()
+        val urls = if (!custom.isNullOrBlank()) {
+            listOf(custom) + AppConfig.FREE_BROKER_DOMAINS.filter { it != custom }
+        } else {
+            AppConfig.FREE_BROKER_DOMAINS
+        }
+
+        for ((index, url) in urls.withIndex()) {
             val body = try {
                 HttpUtil.getUrlContentWithUserAgent(UrlContentRequest(url = url, timeout = 20000))
             } catch (e: CancellationException) {

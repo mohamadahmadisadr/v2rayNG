@@ -2,6 +2,16 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
+    <PreferenceCategory android:title="@string/title_free_servers">
+        <!-- No useSimpleSummaryProvider: SettingsFragment.initPreferenceSummaries
+             sets the summary to the current value itself (a SummaryProvider would
+             collide with that and crash). -->
+        <EditTextPreference
+            android:key="pref_free_broker_url"
+            android:title="@string/title_pref_free_broker_url"
+            android:dialogMessage="@string/summary_pref_free_broker_url" />
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="@string/title_ui_settings">
         <CheckBoxPreference
             android:key="pref_speed_enabled"
