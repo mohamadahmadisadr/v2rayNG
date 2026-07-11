@@ -29,7 +29,7 @@ sealed interface SingBoxConfigResult {
  */
 object SingBoxConfigBuilder {
 
-    private const val PROXY_TAG = "proxy"
+    const val PROXY_TAG = "proxy"
 
     /**
      * Full run config for the phase-1 hev bridge: a local mixed (SOCKS+HTTP) inbound that hev
@@ -58,8 +58,20 @@ object SingBoxConfigBuilder {
         root.add("outbounds", JsonArray().apply { add(outbound) })
         root.add("route", JsonObject().apply { addProperty("final", PROXY_TAG) })
 
+        // clash_api on a per-instance port so SingBoxCore.measureDelay can use sing-box's
+        // native in-core URLTest (/proxies/proxy/delay) — an apples-to-apples equivalent of
+        // xray's measureDelay, instead of a costly external SOCKS request.
+        root.add("experimental", JsonObject().apply {
+            add("clash_api", JsonObject().apply {
+                addProperty("external_controller", "127.0.0.1:${clashPortFor(socksPort)}")
+            })
+        })
+
         return SingBoxConfigResult.Success(JsonUtil.toJson(root))
     }
+
+    /** clash_api control port derived from the SOCKS port, in a separate range to avoid collisions. */
+    fun clashPortFor(socksPort: Int): Int = socksPort + 5000
 
     private fun logBlock(level: String): JsonObject = JsonObject().apply {
         addProperty("level", level)
